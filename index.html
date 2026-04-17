@@ -6,6 +6,8 @@
     <title>Camera Sync Web App</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 </head>
 <body>
     <div class="app">
@@ -20,7 +22,7 @@
         <!-- Home Screen -->
         <div id="home-screen" class="screen">
             <button id="be-controller-btn" class="btn green">Be Controller</button>
-            <button id="join-session-btn" class="btn orange">Join Session</button>
+            <button id="join-session-btn" class="btn orange">Scan QR Code to Join</button>
         </div>
 
         <!-- Controller Screen -->
@@ -38,13 +40,14 @@
             <button id="back-home-btn" class="btn gray">Back to Home</button>
         </div>
 
-        <!-- IP Input Modal -->
-        <div id="ip-modal" class="modal hidden">
-            <div class="modal-content">
-                <h3>Enter Controller IP Address</h3>
-                <input type="text" id="ip-input" placeholder="192.168.1.100" value="localhost">
-                <button id="connect-btn" class="btn blue">Connect</button>
-                <button id="cancel-btn" class="btn gray">Cancel</button>
+        <!-- QR Scanner Modal -->
+        <div id="qr-scanner-modal" class="modal hidden">
+            <div class="modal-content scanner-modal">
+                <h3>Scan Controller's QR Code</h3>
+                <video id="qr-video" autoplay muted playsinline></video>
+                <canvas id="qr-canvas" class="hidden"></canvas>
+                <p id="qr-status">Position QR code in view</p>
+                <button id="cancel-scan-btn" class="btn gray">Cancel</button>
             </div>
         </div>
 
