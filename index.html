@@ -77,30 +77,5 @@
     <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <script src="script.js"></script>
-
-        <!-- Controller Screen -->
-    <div id="controller-screen" class="screen hidden">
-        <video id="controller-preview" autoplay muted playsinline></video>
-        <div class="camera-controls">
-            <button id="trigger-cameras-btn" class="btn red" disabled>Trigger All Cameras</button>
-            <button id="start-recording-btn" class="btn green">Start Recording</button>
-            <button id="stop-recording-btn" class="btn red hidden">Stop Recording</button>
-        </div>
-        <button id="stop-hosting-btn" class="btn gray">Stop Hosting / Back</button>
-    </div>
-
-    <!-- Receiver Screen -->
-    <div id="receiver-screen" class="screen hidden">
-        <video id="receiver-preview" autoplay muted playsinline></video>
-        <div class="camera-controls">
-            <p class="waiting-text">Waiting for camera trigger...</p>
-            <div class="recording-status hidden">
-                <span class="recording-indicator">🔴 RECORDING</span>
-                <span class="recording-time">00:00</span>
-            </div>
-        </div>
-        <button id="reconnect-btn" class="btn blue hidden">Reconnect</button>
-        <button id="back-home-btn" class="btn gray">Back to Home</button>
-    </div>
 </body>
 </html>
