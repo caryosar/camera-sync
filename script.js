@@ -16,7 +16,6 @@ class CameraSyncApp {
         this.attachEventListeners();
         this.requestCameraPermission();
         
-        // Initialize PeerJS after a short delay
         setTimeout(() => {
             this.initializePeerJS();
         }, 1000);
@@ -27,7 +26,9 @@ class CameraSyncApp {
         this.homeScreen = document.getElementById('home-screen');
         this.controllerScreen = document.getElementById('controller-screen');
         this.receiverScreen = document.getElementById('receiver-screen');
+        this.joinModal = document.getElementById('join-modal');
         this.qrScannerModal = document.getElementById('qr-scanner-modal');
+        this.idInputModal = document.getElementById('id-input-modal');
         
         // Status elements
         this.connectedCount = document.getElementById('connected-count');
@@ -48,7 +49,19 @@ class CameraSyncApp {
         this.stopHostingBtn = document.getElementById('stop-hosting-btn');
         this.reconnectBtn = document.getElementById('reconnect-btn');
         this.backHomeBtn = document.getElementById('back-home-btn');
+        
+        // Join modal buttons
+        this.scanQRBtn = document.getElementById('scan-qr-btn');
+        this.manualIdBtn = document.getElementById('manual-id-btn');
+        this.cancelJoinBtn = document.getElementById('cancel-join-btn');
+        
+        // QR scanner buttons
         this.cancelScanBtn = document.getElementById('cancel-scan-btn');
+        
+        // Manual input elements
+        this.controllerIdInput = document.getElementById('controller-id-input');
+        this.connectManualBtn = document.getElementById('connect-manual-btn');
+        this.cancelManualBtn = document.getElementById('cancel-manual-btn');
         
         // QR elements
         this.qrStatus = document.getElementById('qr-status');
@@ -56,28 +69,65 @@ class CameraSyncApp {
 
     attachEventListeners() {
         this.beControllerBtn.addEventListener('click', () => this.becomeController());
-        this.joinSessionBtn.addEventListener('click', () => this.startQRScanner());
+        this.joinSessionBtn.addEventListener('click', () => this.showJoinModal());
         this.triggerCamerasBtn.addEventListener('click', () => this.triggerCameras());
         this.stopHostingBtn.addEventListener('click', () => this.stopHosting());
-        this.reconnectBtn.addEventListener('click', () => this.startQRScanner());
+        this.reconnectBtn.addEventListener('click', () => this.showJoinModal());
         this.backHomeBtn.addEventListener('click', () => this.backToHome());
+        
+        // Join modal
+        this.scanQRBtn.addEventListener('click', () => this.startQRScanner());
+        this.manualIdBtn.addEventListener('click', () => this.showManualInput());
+        this.cancelJoinBtn.addEventListener('click', () => this.hideJoinModal());
+        
+        // QR scanner
         this.cancelScanBtn.addEventListener('click', () => this.stopQRScanner());
+        
+        // Manual input
+        this.connectManualBtn.addEventListener('click', () => this.connectManually());
+        this.cancelManualBtn.addEventListener('click', () => this.hideManualInput());
+    }
+
+    showJoinModal() {
+        this.joinModal.classList.remove('hidden');
+    }
+
+    hideJoinModal() {
+        this.joinModal.classList.add('hidden');
+    }
+
+    showManualInput() {
+        this.hideJoinModal();
+        this.idInputModal.classList.remove('hidden');
+    }
+
+    hideManualInput() {
+        this.idInputModal.classList.add('hidden');
+    }
+
+    connectManually() {
+        const controllerId = this.controllerIdInput.value.trim();
+        if (!controllerId) {
+            alert('Please enter a Controller ID');
+            return;
+        }
+        
+        this.hideManualInput();
+        this.connectToController(controllerId);
     }
 
     initializePeerJS() {
-        this.updateDebugMessage('Initializing PeerJS...');
+        this.updateDebugMessage('Initializing connection...');
         
         try {
-            // Try alternative PeerJS server
             this.peer = new Peer({
-                debug: 2
+                debug: 1
             });
 
             this.peer.on('open', (id) => {
                 this.myPeerId = id;
-                this.updateDebugMessage(`Peer connected! ID: ${id.substring(0, 8)}...`);
+                this.updateDebugMessage(`Connected! ID: ${id.substring(0, 8)}...`);
                 
-                // If we're already a controller, generate QR code now
                 if (this.isController) {
                     this.generateQRCode();
                 }
@@ -88,29 +138,18 @@ class CameraSyncApp {
             });
 
             this.peer.on('error', (err) => {
-                this.updateDebugMessage(`Peer error: ${err.type} - ${err.message}`);
-                
-                // Try fallback method if PeerJS fails
-                if (err.type === 'network' || err.type === 'server-error') {
-                    this.fallbackToManualConnection();
-                }
-            });
-
-            this.peer.on('disconnected', () => {
-                this.updateDebugMessage('Peer disconnected - trying to reconnect...');
-                this.peer.reconnect();
+                this.updateDebugMessage(`Connection error: ${err.type}`);
+                this.fallbackToManualConnection();
             });
 
         } catch (error) {
-            this.updateDebugMessage(`PeerJS init error: ${error.message}`);
+            this.updateDebugMessage(`Error: ${error.message}`);
             this.fallbackToManualConnection();
         }
     }
 
     fallbackToManualConnection() {
-        this.updateDebugMessage('Using fallback connection method');
-        // Generate a simple random ID for fallback
-        this.myPeerId = 'fallback-' + Math.random().toString(36).substr(2, 9);
+        this.myPeerId = 'local-' + Math.random().toString(36).substr(2, 9);
         
         if (this.isController) {
             this.generateQRCode();
@@ -128,7 +167,7 @@ class CameraSyncApp {
         conn.on('data', (data) => {
             if (data.type === 'TAKE_PHOTO') {
                 this.capturePhoto();
-                this.updateDebugMessage('Photo triggered by controller!');
+                this.updateDebugMessage('Photo triggered!');
             }
         });
 
@@ -143,8 +182,8 @@ class CameraSyncApp {
             this.stream = await navigator.mediaDevices.getUserMedia({ 
                 video: { 
                     facingMode: 'environment',
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 }
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
                 }, 
                 audio: false 
             });
@@ -155,6 +194,8 @@ class CameraSyncApp {
     }
 
     async startQRScanner() {
+        this.hideJoinModal();
+        
         try {
             this.qrStream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'environment' }
@@ -187,7 +228,6 @@ class CameraSyncApp {
             
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             
-            // Check if jsQR is available
             if (typeof jsQR !== 'undefined') {
                 const code = jsQR(imageData.data, imageData.width, imageData.height);
                 
@@ -203,14 +243,23 @@ class CameraSyncApp {
 
     handleQRCodeDetected(data) {
         try {
+            // Try to parse as JSON first
             const qrData = JSON.parse(data);
             if (qrData.type === 'camera_sync_controller' && qrData.peerId) {
                 this.stopQRScanner();
                 this.connectToController(qrData.peerId);
+                return;
             }
         } catch (error) {
-            this.qrStatus.textContent = 'Invalid QR code - keep scanning...';
+            // If not JSON, treat as plain text ID
+            if (data && data.length > 5) {
+                this.stopQRScanner();
+                this.connectToController(data);
+                return;
+            }
         }
+        
+        this.qrStatus.textContent = 'Invalid QR code - keep scanning...';
     }
 
     stopQRScanner() {
@@ -229,7 +278,7 @@ class CameraSyncApp {
     }
 
     updateDebugMessage(message) {
-        console.log('Debug:', message); // Also log to console
+        console.log('Debug:', message);
         this.debugMessage.textContent = message;
     }
 
@@ -257,22 +306,15 @@ class CameraSyncApp {
     startHosting() {
         this.updateDebugMessage('Starting controller...');
         
-        // Generate QR code immediately if we have a peer ID, otherwise wait
         if (this.myPeerId) {
             this.generateQRCode();
         } else {
-            this.updateDebugMessage('Waiting for peer connection...');
+            this.updateDebugMessage('Waiting for connection...');
         }
     }
 
-    async generateQRCode() {
-        this.updateDebugMessage('Generating QR code...');
-        
-        const qrData = {
-            type: 'camera_sync_controller',
-            peerId: this.myPeerId,
-            timestamp: Date.now()
-        };
+    generateQRCode() {
+        this.updateDebugMessage('Creating connection code...');
         
         const existingQR = this.controllerScreen.querySelector('.qr-code-container');
         if (existingQR) {
@@ -282,46 +324,46 @@ class CameraSyncApp {
         const qrContainer = document.createElement('div');
         qrContainer.className = 'qr-code-container';
         
-        const canvas = document.createElement('canvas');
-        
+        // Create QR code using qrcode-generator library
         try {
-            // Check if QRCode library is available
-            if (typeof QRCode !== 'undefined') {
-                await QRCode.toCanvas(canvas, JSON.stringify(qrData), {
-                    width: 200,
-                    margin: 2,
-                    color: {
-                        dark: '#000000',
-                        light: '#FFFFFF'
-                    }
-                });
-                
-                qrContainer.innerHTML = `
-                    <div class="qr-instructions">
-                        <strong>Other devices:</strong> Click "Scan QR Code to Join" and point camera at this code<br>
-                        <small>Peer ID: ${this.myPeerId}</small>
-                    </div>
-                `;
-                qrContainer.appendChild(canvas);
-                
-                this.controllerScreen.insertBefore(qrContainer, this.triggerCamerasBtn);
-                this.updateDebugMessage('QR Code ready - waiting for connections');
-                
-            } else {
-                throw new Error('QRCode library not loaded');
-            }
-        } catch (error) {
-            this.updateDebugMessage(`QR Code error: ${error.message}`);
+            const qr = qrcode(0, 'M');
+            qr.addData(this.myPeerId); // Just use the plain ID
+            qr.make();
             
-            // Fallback: Show the peer ID as text
+            const qrHTML = qr.createImgTag(4, 8); // cellSize=4, margin=8
+            
             qrContainer.innerHTML = `
                 <div class="qr-instructions">
-                    <strong>QR Code failed to generate</strong><br>
-                    Share this ID manually: <br>
-                    <code style="font-size: 16px; background: #f0f0f0; padding: 10px; display: block; margin: 10px 0;">${this.myPeerId}</code>
+                    <strong>Connection Options:</strong><br>
+                    1. Other devices can scan this QR code, OR<br>
+                    2. Share this ID manually: <br>
+                    <input type="text" value="${this.myPeerId}" readonly 
+                           style="width: 100%; padding: 8px; margin: 8px 0; font-family: monospace; 
+                                  background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px;"
+                           onclick="this.select()">
+                    <small>Tap ID above to copy</small>
+                </div>
+                ${qrHTML}
+            `;
+            
+            this.controllerScreen.insertBefore(qrContainer, this.triggerCamerasBtn);
+            this.updateDebugMessage('QR Code ready - waiting for connections');
+            
+        } catch (error) {
+            // Fallback: Show only the text ID
+            qrContainer.innerHTML = `
+                <div class="qr-instructions">
+                    <strong>QR Code failed - use manual connection</strong><br>
+                    Share this ID: <br>
+                    <input type="text" value="${this.myPeerId}" readonly 
+                           style="width: 100%; padding: 10px; margin: 10px 0; font-family: monospace; 
+                                  background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; font-size: 16px;"
+                           onclick="this.select()">
+                    <small>Tap to select and copy</small>
                 </div>
             `;
             this.controllerScreen.insertBefore(qrContainer, this.triggerCamerasBtn);
+            this.updateDebugMessage('Ready - share the ID above');
         }
     }
 
@@ -333,7 +375,7 @@ class CameraSyncApp {
             this.receiverPreview.srcObject = this.stream;
         }
         
-        this.updateDebugMessage(`Connecting to controller: ${controllerId}`);
+        this.updateDebugMessage(`Connecting to: ${controllerId.substring(0, 8)}...`);
         
         if (this.peer && this.peer.open) {
             const conn = this.peer.connect(controllerId);
@@ -362,16 +404,16 @@ class CameraSyncApp {
                 this.reconnectBtn.classList.remove('hidden');
             });
         } else {
-            this.updateDebugMessage('Peer not ready - simulating connection');
+            // Simulate connection for demo
             setTimeout(() => {
                 this.isConnected = true;
-                this.updateDebugMessage('Connected (simulated)!');
+                this.updateDebugMessage('Connected (demo mode)!');
             }, 1000);
         }
     }
 
     triggerCameras() {
-        this.updateDebugMessage('Triggering all connected cameras!');
+        this.updateDebugMessage('Triggering all cameras!');
         
         this.connections.forEach((conn) => {
             if (conn.open) {
@@ -380,12 +422,12 @@ class CameraSyncApp {
         });
         
         this.capturePhoto();
-        this.updateDebugMessage(`Trigger sent to ${this.connections.size} devices!`);
+        this.updateDebugMessage(`Photos triggered on ${this.connections.size + 1} devices!`);
     }
 
     async capturePhoto() {
         if (!this.stream) {
-            this.updateCameraStatus('No camera stream available');
+            this.updateCameraStatus('No camera available');
             return;
         }
 
@@ -393,7 +435,7 @@ class CameraSyncApp {
         const video = this.isController ? this.controllerPreview : this.receiverPreview;
         
         if (video.videoWidth === 0 || video.videoHeight === 0) {
-            this.updateCameraStatus('Video not ready yet');
+            this.updateCameraStatus('Video not ready');
             return;
         }
         
@@ -403,22 +445,18 @@ class CameraSyncApp {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0);
         
-        canvas.toBlob(async (blob) => {
-            this.forceDownload(blob);
+        canvas.toBlob((blob) => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `camera_sync_${Date.now()}.jpg`;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            this.updateCameraStatus('Photo saved!');
         }, 'image/jpeg', 0.9);
-    }
-
-    forceDownload(blob) {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `camera_sync_${Date.now()}.jpg`;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        this.updateCameraStatus('Photo saved to Photos!');
     }
 
     stopHosting() {
@@ -430,7 +468,7 @@ class CameraSyncApp {
         this.connections.clear();
         
         this.updateConnectedCount(0);
-        this.updateDebugMessage('Stopped hosting');
+        this.updateDebugMessage('Ready to connect');
         this.showScreen(this.homeScreen);
         
         if (this.controllerPreview.srcObject) {

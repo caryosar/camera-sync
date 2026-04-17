@@ -5,9 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Camera Sync Web App</title>
     <link rel="stylesheet" href="styles.css">
-    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 </head>
 <body>
     <div class="app">
@@ -22,7 +19,7 @@
         <!-- Home Screen -->
         <div id="home-screen" class="screen">
             <button id="be-controller-btn" class="btn green">Be Controller</button>
-            <button id="join-session-btn" class="btn orange">Scan QR Code to Join</button>
+            <button id="join-session-btn" class="btn orange">Join Session</button>
         </div>
 
         <!-- Controller Screen -->
@@ -40,6 +37,16 @@
             <button id="back-home-btn" class="btn gray">Back to Home</button>
         </div>
 
+        <!-- Join Options Modal -->
+        <div id="join-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>How do you want to connect?</h3>
+                <button id="scan-qr-btn" class="btn blue">Scan QR Code</button>
+                <button id="manual-id-btn" class="btn orange">Enter ID Manually</button>
+                <button id="cancel-join-btn" class="btn gray">Cancel</button>
+            </div>
+        </div>
+
         <!-- QR Scanner Modal -->
         <div id="qr-scanner-modal" class="modal hidden">
             <div class="modal-content scanner-modal">
@@ -51,9 +58,23 @@
             </div>
         </div>
 
+        <!-- Manual ID Input Modal -->
+        <div id="id-input-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>Enter Controller ID</h3>
+                <input type="text" id="controller-id-input" placeholder="Paste controller ID here">
+                <button id="connect-manual-btn" class="btn blue">Connect</button>
+                <button id="cancel-manual-btn" class="btn gray">Cancel</button>
+            </div>
+        </div>
+
         <canvas id="capture-canvas" class="hidden"></canvas>
     </div>
 
+    <!-- Load libraries -->
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
