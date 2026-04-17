@@ -522,32 +522,127 @@ class CameraSyncApp {
         clearAllBtn.disabled = false;
     }
 
-    downloadAllPhotos() {
-        if (this.capturedPhotos.length === 0) {
-            alert('No photos to download');
-            return;
+async downloadAllPhotos() {
+    if (this.capturedPhotos.length === 0) {
+        alert('No photos to download');
+        return;
+    }
+    
+    // Create progress indicator
+    const progressDiv = this.createProgressIndicator();
+    
+    try {
+        const zip = new JSZip();
+        
+        // Process photos with progress updates
+        for (let i = 0; i < this.capturedPhotos.length; i++) {
+            const photo = this.capturedPhotos[i];
+            
+            // Update progress
+            const progress = Math.round(((i + 1) / this.capturedPhotos.length) * 50); // 50% for adding files
+            this.updateProgress(progressDiv, progress, `Adding photo ${i + 1}/${this.capturedPhotos.length}...`);
+            
+            // Convert data URL to blob
+            const response = await fetch(photo.dataURL);
+            const blob = await response.blob();
+            
+            // Add to ZIP
+            zip.file(photo.filename, blob);
         }
         
-        this.updateDebugMessage('Preparing photos for download...');
+        // Generate ZIP with progress
+        this.updateProgress(progressDiv, 75, 'Generating ZIP file...');
         
-        // Download each photo with a small delay to avoid browser blocking
-        this.capturedPhotos.forEach((photo, index) => {
-            setTimeout(() => {
-                const link = document.createElement('a');
-                link.href = photo.dataURL;
-                link.download = photo.filename;
-                link.style.display = 'none';
-                
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                
-                if (index === this.capturedPhotos.length - 1) {
-                    this.updateDebugMessage(`All ${this.capturedPhotos.length} photos downloaded!`);
-                }
-            }, index * 200); // 200ms delay between downloads
+        const zipBlob = await zip.generateAsync({ 
+            type: 'blob',
+            compression: 'DEFLATE',
+            compressionOptions: { level: 6 }
         });
+        
+        // Download ZIP
+        this.updateProgress(progressDiv, 90, 'Preparing download...');
+        
+        const url = URL.createObjectURL(zipBlob);
+        const link = document.createElement('a');
+        
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+        const deviceType = this.isController ? 'controller' : 'receiver';
+        link.href = url;
+        link.download = `camera_sync_${deviceType}_${timestamp}.zip`;
+        link.style.display = 'none';
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        URL.revokeObjectURL(url);
+        
+        // Complete
+        this.updateProgress(progressDiv, 100, 'Download complete!');
+        
+        setTimeout(() => {
+            this.removeProgressIndicator(progressDiv);
+            this.updateDebugMessage(`ZIP file with ${this.capturedPhotos.length} photos downloaded!`);
+            this.updateCameraStatus('All photos downloaded as ZIP file!');
+        }, 1500);
+        
+    } catch (error) {
+        console.error('ZIP creation failed:', error);
+        this.removeProgressIndicator(progressDiv);
+        this.updateDebugMessage('ZIP creation failed - trying individual downloads...');
+        this.fallbackDownload();
     }
+}
+
+createProgressIndicator() {
+    const progressDiv = document.createElement('div');
+    progressDiv.className = 'download-progress';
+    progressDiv.innerHTML = `
+        <div class="progress-content">
+            <h4>Creating ZIP File</h4>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: 0%"></div>
+            </div>
+            <p class="progress-text">Starting...</p>
+        </div>
+    `;
+    
+    document.body.appendChild(progressDiv);
+    return progressDiv;
+}
+
+updateProgress(progressDiv, percentage, text) {
+    const fill = progressDiv.querySelector('.progress-fill');
+    const textEl = progressDiv.querySelector('.progress-text');
+    
+    fill.style.width = `${percentage}%`;
+    textEl.textContent = text;
+}
+
+removeProgressIndicator(progressDiv) {
+    if (progressDiv && progressDiv.parentNode) {
+        document.body.removeChild(progressDiv);
+    }
+}
+
+fallbackDownload() {
+    this.capturedPhotos.forEach((photo, index) => {
+        setTimeout(() => {
+            const link = document.createElement('a');
+            link.href = photo.dataURL;
+            link.download = photo.filename;
+            link.style.display = 'none';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            if (index === this.capturedPhotos.length - 1) {
+                this.updateDebugMessage(`Fallback: ${this.capturedPhotos.length} photos downloaded individually`);
+            }
+        }, index * 200);
+    });
+}
 
     clearAllPhotos() {
         if (confirm(`Clear all ${this.capturedPhotos.length} photos? This cannot be undone.`)) {
