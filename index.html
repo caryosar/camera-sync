@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Sync Web App</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <h1>Camera Sync App</h1>
+        
+        <div class="status">
+            <p>Connected: <span id="connected-count">0</span></p>
+            <p id="debug-message">Ready to connect</p>
+            <p id="camera-status">Camera not initialized</p>
+        </div>
+
+        <!-- Home Screen -->
+        <div id="home-screen" class="screen">
+            <button id="be-controller-btn" class="btn green">Be Controller</button>
+            <button id="join-session-btn" class="btn orange">Join Session</button>
+        </div>
+
+        <!-- Controller Screen -->
+        <div id="controller-screen" class="screen hidden">
+            <video id="controller-preview" autoplay muted playsinline></video>
+            <button id="trigger-cameras-btn" class="btn red" disabled>Trigger All Cameras</button>
+            <button id="stop-hosting-btn" class="btn gray">Stop Hosting / Back</button>
+        </div>
+
+        <!-- Receiver Screen -->
+        <div id="receiver-screen" class="screen hidden">
+            <video id="receiver-preview" autoplay muted playsinline></video>
+            <p class="waiting-text">Waiting for camera trigger...</p>
+            <button id="reconnect-btn" class="btn blue hidden">Reconnect</button>
+            <button id="back-home-btn" class="btn gray">Back to Home</button>
+        </div>
+
+        <!-- IP Input Modal -->
+        <div id="ip-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>Enter Controller IP Address</h3>
+                <input type="text" id="ip-input" placeholder="192.168.1.100" value="localhost">
+                <button id="connect-btn" class="btn blue">Connect</button>
+                <button id="cancel-btn" class="btn gray">Cancel</button>
+            </div>
+        </div>
+
+        <canvas id="capture-canvas" class="hidden"></canvas>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
