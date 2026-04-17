@@ -10,6 +10,7 @@ class CameraSyncApp {
         this.connections = new Map();
         this.myPeerId = null;
         this.qrScanning = false;
+        this.capturedPhotos = []; // Store captured photos
         
         this.initializeElements();
         this.attachEventListeners();
@@ -195,19 +196,16 @@ class CameraSyncApp {
     startQRScanner() {
         this.hideJoinModal();
         
-        // Use the existing camera stream for QR scanning
         if (!this.stream) {
             this.updateDebugMessage('Camera not available for QR scanning');
             return;
         }
         
-        // Set the main camera stream to the QR video element
         this.qrVideo.srcObject = this.stream;
         this.qrScannerModal.classList.remove('hidden');
         this.qrScanning = true;
         this.updateDebugMessage('QR Scanner active - point at QR code');
         
-        // Start scanning once video is loaded
         this.qrVideo.addEventListener('loadedmetadata', () => {
             this.scanQRCode();
         }, { once: true });
@@ -243,14 +241,12 @@ class CameraSyncApp {
 
     handleQRCodeDetected(data) {
         try {
-            // Try to parse as JSON first
             const qrData = JSON.parse(data);
             if (qrData.type === 'camera_sync_controller' && qrData.peerId) {
                 this.stopQRScannerAndConnect(qrData.peerId);
                 return;
             }
         } catch (error) {
-            // If not JSON, treat as plain text ID
             if (data && data.length > 5) {
                 this.stopQRScannerAndConnect(data);
                 return;
@@ -268,8 +264,6 @@ class CameraSyncApp {
 
     stopQRScanner() {
         this.qrScanning = false;
-        
-        // Don't stop the main stream, just remove it from QR video
         this.qrVideo.srcObject = null;
         this.qrScannerModal.classList.add('hidden');
         this.qrStatus.textContent = 'Position QR code in view';
@@ -308,6 +302,7 @@ class CameraSyncApp {
             this.controllerPreview.srcObject = this.stream;
         }
         
+        this.createPhotoGallery('controller');
         this.startHosting();
     }
 
@@ -319,6 +314,36 @@ class CameraSyncApp {
         } else {
             this.updateDebugMessage('Waiting for connection...');
         }
+    }
+
+    createPhotoGallery(screenType) {
+        const screen = screenType === 'controller' ? this.controllerScreen : this.receiverScreen;
+        
+        // Remove existing gallery if any
+        const existingGallery = screen.querySelector('.photo-gallery');
+        if (existingGallery) {
+            existingGallery.remove();
+        }
+        
+        const galleryContainer = document.createElement('div');
+        galleryContainer.className = 'photo-gallery';
+        galleryContainer.innerHTML = `
+            <div class="gallery-header">
+                <h3>Photos Captured: <span class="photo-count">0</span></h3>
+                <button class="btn blue download-all-btn" disabled>Download All Photos</button>
+                <button class="btn red clear-all-btn" disabled>Clear All</button>
+            </div>
+            <div class="gallery-grid"></div>
+        `;
+        
+        screen.appendChild(galleryContainer);
+        
+        // Add event listeners for gallery buttons
+        const downloadAllBtn = galleryContainer.querySelector('.download-all-btn');
+        const clearAllBtn = galleryContainer.querySelector('.clear-all-btn');
+        
+        downloadAllBtn.addEventListener('click', () => this.downloadAllPhotos());
+        clearAllBtn.addEventListener('click', () => this.clearAllPhotos());
     }
 
     generateQRCode() {
@@ -353,7 +378,9 @@ class CameraSyncApp {
                 ${qrHTML}
             `;
             
-            this.controllerScreen.insertBefore(qrContainer, this.triggerCamerasBtn);
+            // Insert before photo gallery
+            const photoGallery = this.controllerScreen.querySelector('.photo-gallery');
+            this.controllerScreen.insertBefore(qrContainer, photoGallery);
             this.updateDebugMessage('QR Code ready - waiting for connections');
             
         } catch (error) {
@@ -368,7 +395,8 @@ class CameraSyncApp {
                     <small>Tap to select and copy</small>
                 </div>
             `;
-            this.controllerScreen.insertBefore(qrContainer, this.triggerCamerasBtn);
+            const photoGallery = this.controllerScreen.querySelector('.photo-gallery');
+            this.controllerScreen.insertBefore(qrContainer, photoGallery);
             this.updateDebugMessage('Ready - share the ID above');
         }
     }
@@ -377,13 +405,12 @@ class CameraSyncApp {
         this.hasJoinedSession = true;
         this.showScreen(this.receiverScreen);
         
-        // Set the main camera stream to receiver preview immediately
         if (this.stream) {
             this.receiverPreview.srcObject = this.stream;
             this.updateCameraStatus('Camera ready for photos');
-            this.updateDebugMessage('Camera restored to receiver preview');
         }
         
+        this.createPhotoGallery('receiver');
         this.updateDebugMessage(`Connecting to: ${controllerId.substring(0, 8)}...`);
         
         if (this.peer && this.peer.open) {
@@ -445,7 +472,6 @@ class CameraSyncApp {
         if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
             this.updateCameraStatus('Video not ready - restoring...');
             
-            // Try to restore the video stream
             if (this.stream) {
                 video.srcObject = this.stream;
                 setTimeout(() => this.capturePhoto(), 1000);
@@ -459,23 +485,88 @@ class CameraSyncApp {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0);
         
-        // Create download link that automatically triggers
-        canvas.toBlob((blob) => {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `camera_sync_${Date.now()}.jpg`;
-            a.style.display = 'none';
+        // Convert to data URL and store in memory
+        const dataURL = canvas.toDataURL('image/jpeg', 0.95);
+        const timestamp = Date.now();
+        
+        this.capturedPhotos.push({
+            dataURL: dataURL,
+            timestamp: timestamp,
+            filename: `camera_sync_${timestamp}.jpg`
+        });
+        
+        this.addPhotoToGallery(dataURL, timestamp);
+        this.updateCameraStatus(`Photo ${this.capturedPhotos.length} captured!`);
+    }
+
+    addPhotoToGallery(dataURL, timestamp) {
+        const currentScreen = this.isController ? this.controllerScreen : this.receiverScreen;
+        const galleryGrid = currentScreen.querySelector('.gallery-grid');
+        const photoCount = currentScreen.querySelector('.photo-count');
+        const downloadAllBtn = currentScreen.querySelector('.download-all-btn');
+        const clearAllBtn = currentScreen.querySelector('.clear-all-btn');
+        
+        // Create thumbnail
+        const photoDiv = document.createElement('div');
+        photoDiv.className = 'gallery-photo';
+        photoDiv.innerHTML = `
+            <img src="${dataURL}" alt="Photo ${this.capturedPhotos.length}">
+            <div class="photo-info">Photo ${this.capturedPhotos.length}</div>
+        `;
+        
+        galleryGrid.appendChild(photoDiv);
+        
+        // Update counter and enable buttons
+        photoCount.textContent = this.capturedPhotos.length;
+        downloadAllBtn.disabled = false;
+        clearAllBtn.disabled = false;
+    }
+
+    downloadAllPhotos() {
+        if (this.capturedPhotos.length === 0) {
+            alert('No photos to download');
+            return;
+        }
+        
+        this.updateDebugMessage('Preparing photos for download...');
+        
+        // Download each photo with a small delay to avoid browser blocking
+        this.capturedPhotos.forEach((photo, index) => {
+            setTimeout(() => {
+                const link = document.createElement('a');
+                link.href = photo.dataURL;
+                link.download = photo.filename;
+                link.style.display = 'none';
+                
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                if (index === this.capturedPhotos.length - 1) {
+                    this.updateDebugMessage(`All ${this.capturedPhotos.length} photos downloaded!`);
+                }
+            }, index * 200); // 200ms delay between downloads
+        });
+    }
+
+    clearAllPhotos() {
+        if (confirm(`Clear all ${this.capturedPhotos.length} photos? This cannot be undone.`)) {
+            this.capturedPhotos = [];
             
-            // Add to DOM and trigger click
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+            const currentScreen = this.isController ? this.controllerScreen : this.receiverScreen;
+            const galleryGrid = currentScreen.querySelector('.gallery-grid');
+            const photoCount = currentScreen.querySelector('.photo-count');
+            const downloadAllBtn = currentScreen.querySelector('.download-all-btn');
+            const clearAllBtn = currentScreen.querySelector('.clear-all-btn');
             
-            // Clean up
-            URL.revokeObjectURL(url);
-            this.updateCameraStatus('Photo saved automatically!');
-        }, 'image/jpeg', 0.95);
+            galleryGrid.innerHTML = '';
+            photoCount.textContent = '0';
+            downloadAllBtn.disabled = true;
+            clearAllBtn.disabled = true;
+            
+            this.updateDebugMessage('All photos cleared');
+            this.updateCameraStatus('Ready for new photos');
+        }
     }
 
     stopHosting() {
@@ -490,10 +581,8 @@ class CameraSyncApp {
         this.updateDebugMessage('Ready to connect');
         this.showScreen(this.homeScreen);
         
-        const qrContainer = this.controllerScreen.querySelector('.qr-code-container');
-        if (qrContainer) {
-            qrContainer.remove();
-        }
+        // Clear photos when stopping
+        this.capturedPhotos = [];
     }
 
     backToHome() {
@@ -501,6 +590,9 @@ class CameraSyncApp {
         this.isConnected = false;
         this.updateDebugMessage('Ready to connect');
         this.showScreen(this.homeScreen);
+        
+        // Clear photos when going home
+        this.capturedPhotos = [];
     }
 }
 
