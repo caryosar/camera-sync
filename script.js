@@ -4,16 +4,32 @@ class CameraSyncApp {
         this.hasJoinedSession = false;
         this.connectedPeers = 0;
         this.isConnected = false;
+        this.defaultMaxDevices = 8;
+        this.absoluteMaxDevices = 32;
+        this.maxConnectedDevices = this.resolveMaxDevices();
+        this.heartbeatIntervalMs = 10000;
+        this.connectionTimeoutMs = 30000;
         
         this.stream = null;
         this.peer = null;
         this.connections = new Map();
+        this.connectionTimes = new Map(); // Track connection timestamps per connection key
+        this.connectionLastSeen = new Map();
         this.myPeerId = null;
         this.qrScanning = false;
         this.capturedPhotos = []; // Store captured photos
+        this.devicesTableRefreshInterval = null; // Interval for updating table
+        this.connectionHeartbeatInterval = null;
+        this.activeControllerConnection = null;
+        this.qrStream = null;
+        this.qrScanAnimationFrameId = null;
+        this.qrUsesMainStream = false;
+        this.isPeerReady = false;
         
         this.initializeElements();
         this.attachEventListeners();
+        this.updateCameraStatus('Camera will be requested when you start Controller or Receiver mode');
+        this.updateEnvironmentWarnings();
         this.requestCameraPermission();
         
         setTimeout(() => {
@@ -34,6 +50,7 @@ class CameraSyncApp {
         this.connectedCount = document.getElementById('connected-count');
         this.debugMessage = document.getElementById('debug-message');
         this.cameraStatus = document.getElementById('camera-status');
+        this.cameraPolicyWarning = document.getElementById('camera-policy-warning');
         
         // Video elements
         this.controllerPreview = document.getElementById('controller-preview');
@@ -65,6 +82,9 @@ class CameraSyncApp {
         
         // QR elements
         this.qrStatus = document.getElementById('qr-status');
+        
+        // Connected devices table elements
+        this.devicesTableBody = document.getElementById('devices-table-body');
     }
 
     attachEventListeners() {
@@ -111,9 +131,150 @@ class CameraSyncApp {
             alert('Please enter a Controller ID');
             return;
         }
+
+        if (controllerId.startsWith('local-')) {
+            alert('This controller ID is not reachable. Ensure the controller is online and connected to PeerJS.');
+            return;
+        }
         
         this.hideManualInput();
         this.connectToController(controllerId);
+    }
+
+    updateEnvironmentWarnings() {
+        if (!this.cameraPolicyWarning) {
+            return;
+        }
+
+        if (!window.isSecureContext) {
+            this.cameraPolicyWarning.textContent = 'Camera access requires https:// or http://localhost.';
+            this.cameraPolicyWarning.classList.remove('hidden');
+            return;
+        }
+
+        if (window.top !== window.self) {
+            this.cameraPolicyWarning.textContent = 'This app is embedded. If camera is blocked, open it directly in a browser tab or allow camera on the iframe.';
+            this.cameraPolicyWarning.classList.remove('hidden');
+            return;
+        }
+
+        this.cameraPolicyWarning.textContent = '';
+        this.cameraPolicyWarning.classList.add('hidden');
+    }
+
+    showCameraPolicyWarning(message) {
+        if (!this.cameraPolicyWarning) {
+            return;
+        }
+
+        this.cameraPolicyWarning.textContent = message;
+        this.cameraPolicyWarning.classList.remove('hidden');
+    }
+
+    clearCameraPolicyWarning() {
+        if (!this.cameraPolicyWarning) {
+            return;
+        }
+
+        this.updateEnvironmentWarnings();
+    }
+
+    resolveMaxDevices() {
+        const params = new URLSearchParams(window.location.search);
+        const requested = Number.parseInt(params.get('maxDevices'), 10);
+
+        if (!Number.isFinite(requested)) {
+            return this.defaultMaxDevices;
+        }
+
+        const clamped = Math.max(1, Math.min(this.absoluteMaxDevices, requested));
+        return clamped;
+    }
+
+    getConnectionKey(conn) {
+        if (conn.connectionId) {
+            return conn.connectionId;
+        }
+
+        return `${conn.peer}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    }
+
+    getOpenConnections() {
+        const open = [];
+        this.connections.forEach((conn, connectionKey) => {
+            if (conn && conn.open) {
+                open.push({ connectionKey, conn });
+            }
+        });
+        return open;
+    }
+
+    getOpenConnectionCount() {
+        return this.getOpenConnections().length;
+    }
+
+    removeConnection(connectionKey) {
+        this.connections.delete(connectionKey);
+        this.connectionTimes.delete(connectionKey);
+        this.connectionLastSeen.delete(connectionKey);
+        this.updateConnectedCount(this.getOpenConnectionCount());
+        this.updateDevicesTable();
+    }
+
+    stopConnectionHeartbeat() {
+        if (this.connectionHeartbeatInterval) {
+            clearInterval(this.connectionHeartbeatInterval);
+            this.connectionHeartbeatInterval = null;
+        }
+    }
+
+    startConnectionHeartbeat() {
+        this.stopConnectionHeartbeat();
+
+        this.connectionHeartbeatInterval = setInterval(() => {
+            const now = Date.now();
+            this.connections.forEach((conn, connectionKey) => {
+                if (!conn || !conn.open) {
+                    this.removeConnection(connectionKey);
+                    return;
+                }
+
+                const lastSeen = this.connectionLastSeen.get(connectionKey) || now;
+                if (now - lastSeen > this.connectionTimeoutMs) {
+                    conn.close();
+                    this.removeConnection(connectionKey);
+                    return;
+                }
+
+                try {
+                    conn.send({ type: 'PING', timestamp: now });
+                } catch (error) {
+                    conn.close();
+                    this.removeConnection(connectionKey);
+                }
+            });
+        }, this.heartbeatIntervalMs);
+    }
+
+    canAcceptConnection(conn) {
+        const openConnections = this.getOpenConnectionCount();
+        if (openConnections < this.maxConnectedDevices) {
+            return true;
+        }
+
+        try {
+            conn.send({
+                type: 'SESSION_FULL',
+                maxDevices: this.maxConnectedDevices,
+                message: `Controller is at capacity (${this.maxConnectedDevices} devices)`
+            });
+        } catch (error) {
+            // Ignore send failures for rejected peers.
+        }
+
+        conn.close();
+        this.updateDebugMessage(`Rejected ${conn.peer.substring(0, 8)}... (session full: ${this.maxConnectedDevices})`);
+        return false;
     }
 
     initializePeerJS() {
@@ -126,6 +287,7 @@ class CameraSyncApp {
 
             this.peer.on('open', (id) => {
                 this.myPeerId = id;
+                this.isPeerReady = true;
                 this.updateDebugMessage(`Connected! ID: ${id.substring(0, 8)}...`);
                 
                 if (this.isController) {
@@ -137,43 +299,84 @@ class CameraSyncApp {
                 this.handleIncomingConnection(conn);
             });
 
+            this.peer.on('disconnected', () => {
+                this.isPeerReady = false;
+                this.updateDebugMessage('Signaling connection lost. Retrying...');
+                this.peer.reconnect();
+            });
+
+            this.peer.on('close', () => {
+                this.isPeerReady = false;
+            });
+
             this.peer.on('error', (err) => {
+                this.isPeerReady = false;
                 this.updateDebugMessage(`Connection error: ${err.type}`);
                 this.fallbackToManualConnection();
             });
 
         } catch (error) {
+            this.isPeerReady = false;
             this.updateDebugMessage(`Error: ${error.message}`);
             this.fallbackToManualConnection();
         }
     }
 
     fallbackToManualConnection() {
-        this.myPeerId = 'local-' + Math.random().toString(36).substr(2, 9);
-        
-        if (this.isController) {
-            this.generateQRCode();
-        }
+        this.myPeerId = null;
+        this.updateDebugMessage('Peer signaling unavailable. Check internet/firewall and reload.');
     }
 
     handleIncomingConnection(conn) {
-        this.connections.set(conn.peer, conn);
-        
+        if (!this.isController) {
+            conn.close();
+            return;
+        }
+
+        if (!this.canAcceptConnection(conn)) {
+            return;
+        }
+
+        const connectionKey = this.getConnectionKey(conn);
+        this.connections.set(connectionKey, conn);
+        this.connectionLastSeen.set(connectionKey, Date.now());
+
         conn.on('open', () => {
-            this.updateConnectedCount(this.connections.size);
-            this.updateDebugMessage(`Device connected: ${conn.peer.substring(0, 8)}...`);
+            const connectedAt = Date.now();
+            this.connectionTimes.set(connectionKey, connectedAt);
+            this.connectionLastSeen.set(connectionKey, connectedAt);
+            this.updateConnectedCount(this.getOpenConnectionCount());
+            this.updateDebugMessage(`Device connected: ${conn.peer.substring(0, 8)}... (${this.getOpenConnectionCount()}/${this.maxConnectedDevices})`);
+            this.updateDevicesTable();
         });
 
         conn.on('data', (data) => {
+            this.connectionLastSeen.set(connectionKey, Date.now());
+
+            if (!data || !data.type) {
+                return;
+            }
+
+            if (data.type === 'PONG' || data.type === 'HELLO') {
+                return;
+            }
+            if (data.type === 'PHOTO_CAPTURE' && data.photo && data.photo.dataURL) {
+                this.handleRemotePhoto(conn.peer, data.photo);
+                return;
+            }
+
             if (data.type === 'TAKE_PHOTO') {
                 this.capturePhoto();
                 this.updateDebugMessage('Photo triggered!');
             }
         });
 
+        conn.on('error', () => {
+            this.removeConnection(connectionKey);
+        });
+
         conn.on('close', () => {
-            this.connections.delete(conn.peer);
-            this.updateConnectedCount(this.connections.size);
+            this.removeConnection(connectionKey);
         });
     }
 
@@ -187,28 +390,135 @@ class CameraSyncApp {
                 }, 
                 audio: false 
             });
+            this.clearCameraPolicyWarning();
             this.updateCameraStatus('Camera ready');
+            return true;
         } catch (error) {
-            this.updateCameraStatus(`Camera error: ${error.message}`);
+            const guidance = this.getCameraPermissionGuidance(error);
+            this.showCameraPolicyWarning(guidance);
+            this.updateCameraStatus(guidance);
+            this.updateDebugMessage(guidance);
+            return false;
         }
     }
 
-    startQRScanner() {
+    getCameraPermissionGuidance(error) {
+        const message = (error && error.message ? error.message : '').toLowerCase();
+        const name = error && error.name ? error.name : 'UnknownError';
+        const policyBlocked = message.includes('permissions policy') || message.includes('not allowed in this document');
+            handleRemotePhoto(peerId, photo) {
+                const timestamp = photo.timestamp || Date.now();
+                const sourceLabel = `Remote ${peerId.substring(0, 8)}...`;
+                const fileName = photo.filename || `camera_sync_${peerId.substring(0, 8)}_${timestamp}.jpg`;
+
+                this.capturedPhotos.push({
+                    dataURL: photo.dataURL,
+                    timestamp: timestamp,
+                    filename: fileName
+                });
+
+                this.addPhotoToGallery(photo.dataURL, timestamp, { sourceLabel: sourceLabel });
+                this.updateCameraStatus(`Received remote photo (${this.capturedPhotos.length} total)`);
+            }
+
+            async capturePhoto(options = {}) {
+            if (window.top !== window.self) {
+                return 'Camera blocked by document policy. Open this app directly in a browser tab or allow camera on the embedding iframe.';
+            }
+
+            return 'Camera blocked by Permissions-Policy on this origin. Allow camera for this page in server/browser policy.';
+        }
+
+        if (name === 'NotAllowedError' || name === 'SecurityError') {
+            return 'Camera permission denied. Allow camera in browser site settings, then try again.';
+        }
+
+        if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+            return 'No camera detected on this device.';
+        }
+
+        if (name === 'NotReadableError' || name === 'TrackStartError') {
+            return 'Camera is busy in another app. Close other camera apps and retry.';
+        }
+
+        return `Camera error (${name}): ${error && error.message ? error.message : 'Unknown camera error'}`;
+    }
+
+    async ensureCameraReady() {
+        if (this.stream) {
+            return true;
+        }
+
+        return this.requestCameraPermission();
+    }
+
+    async startQRScanner() {
         this.hideJoinModal();
-        
-        if (!this.stream) {
-            this.updateDebugMessage('Camera not available for QR scanning');
+
+        const scannerStream = await this.requestQRScannerStream();
+        if (!scannerStream) {
             return;
         }
-        
-        this.qrVideo.srcObject = this.stream;
+
+        this.qrVideo.srcObject = scannerStream;
         this.qrScannerModal.classList.remove('hidden');
         this.qrScanning = true;
         this.updateDebugMessage('QR Scanner active - point at QR code');
-        
-        this.qrVideo.addEventListener('loadedmetadata', () => {
-            this.scanQRCode();
-        }, { once: true });
+
+        try {
+            await this.qrVideo.play();
+        } catch (error) {
+            this.updateDebugMessage('Could not start QR preview video. Tap camera permission and try again.');
+            this.stopQRScanner();
+            return;
+        }
+
+        this.scanQRCode();
+    }
+
+    async requestQRScannerStream() {
+            addPhotoToGallery(dataURL, timestamp, options = {}) {
+            this.updateDebugMessage('Browser does not support camera capture for QR scanning.');
+            return null;
+        }
+
+        const hasLiveMainCamera = this.stream && this.stream.getVideoTracks().some((track) => track.readyState === 'live');
+                const sourceLabel = options.sourceLabel || 'Photo';
+        if (hasLiveMainCamera) {
+            this.qrUsesMainStream = true;
+            this.qrStream = this.stream;
+            return this.qrStream;
+        }
+
+                    <div class="photo-info">${sourceLabel} ${this.capturedPhotos.length}</div>
+            this.qrUsesMainStream = false;
+            return this.qrStream;
+        }
+
+        const preferredConstraints = {
+            video: {
+                facingMode: { ideal: 'environment' },
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            },
+            audio: false
+        };
+
+        try {
+            this.qrStream = await navigator.mediaDevices.getUserMedia(preferredConstraints);
+            this.qrUsesMainStream = false;
+            return this.qrStream;
+        } catch (error) {
+            try {
+                // Desktop browsers may not satisfy environment-facing preference.
+                this.qrStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                this.qrUsesMainStream = false;
+                return this.qrStream;
+            } catch (fallbackError) {
+                this.updateDebugMessage('QR scanner camera unavailable. Check camera permissions and policy settings.');
+                return null;
+            }
+        }
     }
 
     scanQRCode() {
@@ -236,7 +546,7 @@ class CameraSyncApp {
             }
         }
         
-        requestAnimationFrame(() => this.scanQRCode());
+        this.qrScanAnimationFrameId = requestAnimationFrame(() => this.scanQRCode());
     }
 
     handleQRCodeDetected(data) {
@@ -264,7 +574,23 @@ class CameraSyncApp {
 
     stopQRScanner() {
         this.qrScanning = false;
+
+        if (this.qrScanAnimationFrameId) {
+            cancelAnimationFrame(this.qrScanAnimationFrameId);
+            this.qrScanAnimationFrameId = null;
+        }
+
         this.qrVideo.srcObject = null;
+
+        if (this.qrStream) {
+            if (!this.qrUsesMainStream) {
+                this.qrStream.getTracks().forEach((track) => track.stop());
+            }
+            this.qrStream = null;
+        }
+
+        this.qrUsesMainStream = false;
+
         this.qrScannerModal.classList.add('hidden');
         this.qrStatus.textContent = 'Position QR code in view';
     }
@@ -290,11 +616,64 @@ class CameraSyncApp {
 
     updateConnectedCount(count) {
         this.connectedPeers = count;
-        this.connectedCount.textContent = count;
+        this.connectedCount.textContent = `${count}/${this.maxConnectedDevices}`;
         this.triggerCamerasBtn.disabled = count === 0;
     }
 
+    formatConnectedTime(timestamp) {
+        const now = Date.now();
+        const elapsedMs = now - timestamp;
+        const elapsedSecs = Math.floor(elapsedMs / 1000);
+        
+        if (elapsedSecs < 60) {
+            return `${elapsedSecs} sec`;
+        }
+        
+        const elapsedMins = Math.floor(elapsedSecs / 60);
+        const remainingSecs = elapsedSecs % 60;
+        
+        if (elapsedMins < 60) {
+            return `${elapsedMins} min ${remainingSecs} sec`;
+        }
+        
+        const elapsedHours = Math.floor(elapsedMins / 60);
+        const remainingMins = elapsedMins % 60;
+        
+        return `${elapsedHours} hr ${remainingMins} min`;
+    }
+
+    updateDevicesTable() {
+        // Clear existing rows
+        this.devicesTableBody.innerHTML = '';
+
+        const openConnections = this.getOpenConnections();
+
+        if (openConnections.length === 0) {
+            this.devicesTableBody.innerHTML = '<tr class="empty-state"><td colspan="3">No devices connected</td></tr>';
+            return;
+        }
+
+        // Build rows for each connected device
+        openConnections.forEach(({ conn, connectionKey }) => {
+            const connectionTime = this.connectionTimes.get(connectionKey);
+            const timeConnectedStr = connectionTime ? this.formatConnectedTime(connectionTime) : 'Unknown';
+            
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td class="device-id">${conn.peer.substring(0, 12)}...</td>
+                <td class="device-status">Connected</td>
+                <td class="device-time">${timeConnectedStr}</td>
+            `;
+            this.devicesTableBody.appendChild(row);
+        });
+    }
+
     async becomeController() {
+        const cameraReady = await this.ensureCameraReady();
+        if (!cameraReady) {
+            return;
+        }
+
         this.isController = true;
         this.showScreen(this.controllerScreen);
         
@@ -302,17 +681,25 @@ class CameraSyncApp {
             this.controllerPreview.srcObject = this.stream;
         }
         
+        this.updateDevicesTable(); // Initialize the table display
         this.createPhotoGallery('controller');
         this.startHosting();
     }
 
     startHosting() {
-        this.updateDebugMessage('Starting controller...');
+        this.updateDebugMessage(`Starting controller (capacity ${this.maxConnectedDevices})...`);
         
-        if (this.myPeerId) {
+        // Start periodic table refresh every second to update time durations
+        this.devicesTableRefreshInterval = setInterval(() => {
+            this.updateDevicesTable();
+        }, 1000);
+
+        this.startConnectionHeartbeat();
+        
+        if (this.myPeerId && this.isPeerReady) {
             this.generateQRCode();
         } else {
-            this.updateDebugMessage('Waiting for connection...');
+            this.updateDebugMessage('Waiting for signaling connection before sharing controller ID...');
         }
     }
 
@@ -347,6 +734,11 @@ class CameraSyncApp {
     }
 
     generateQRCode() {
+        if (!this.myPeerId || !this.isPeerReady) {
+            this.updateDebugMessage('Cannot generate QR yet. Peer signaling is not ready.');
+            return;
+        }
+
         this.updateDebugMessage('Creating connection code...');
         
         const existingQR = this.controllerScreen.querySelector('.qr-code-container');
@@ -404,60 +796,109 @@ class CameraSyncApp {
     connectToController(controllerId) {
         this.hasJoinedSession = true;
         this.showScreen(this.receiverScreen);
-        
-        if (this.stream) {
-            this.receiverPreview.srcObject = this.stream;
-            this.updateCameraStatus('Camera ready for photos');
-        }
+
+        this.ensureCameraReady().then((cameraReady) => {
+            if (cameraReady && this.stream) {
+                this.receiverPreview.srcObject = this.stream;
+                this.updateCameraStatus('Camera ready for photos');
+            }
+        });
         
         this.createPhotoGallery('receiver');
         this.updateDebugMessage(`Connecting to: ${controllerId.substring(0, 8)}...`);
+
+        if (this.activeControllerConnection) {
+            this.activeControllerConnection.close();
+            this.activeControllerConnection = null;
+        }
+
+        if (!this.peer || !this.peer.open || !this.isPeerReady) {
+            this.isConnected = false;
+            this.updateDebugMessage('Local peer signaling is not ready. Wait a moment and retry connection.');
+            this.reconnectBtn.classList.remove('hidden');
+            return;
+        }
         
         if (this.peer && this.peer.open) {
-            const conn = this.peer.connect(controllerId);
+            const conn = this.peer.connect(controllerId, {
+                reliable: true,
+                serialization: 'json'
+            });
+            this.activeControllerConnection = conn;
             
             conn.on('open', () => {
                 this.isConnected = true;
                 this.updateDebugMessage('Connected to controller!');
                 this.reconnectBtn.classList.add('hidden');
+                conn.send({ type: 'HELLO', timestamp: Date.now() });
             });
 
             conn.on('data', (data) => {
+                if (!data || !data.type) {
+                    return;
+                }
+
+                if (data.type === 'SESSION_FULL') {
+                    this.isConnected = false;
+                    this.updateDebugMessage(data.message || 'Controller is full');
+                    this.reconnectBtn.classList.remove('hidden');
+                    return;
+                }
+
+                if (data.type === 'PING') {
+                    conn.send({ type: 'PONG', timestamp: Date.now() });
+                    return;
+                }
+
                 if (data.type === 'TAKE_PHOTO') {
-                    this.capturePhoto();
+                    this.capturePhoto({ sendToController: true });
                     this.updateDebugMessage('Photo triggered by controller!');
                 }
             });
 
             conn.on('close', () => {
                 this.isConnected = false;
+                if (this.activeControllerConnection === conn) {
+                    this.activeControllerConnection = null;
+                }
                 this.updateDebugMessage('Disconnected from controller');
                 this.reconnectBtn.classList.remove('hidden');
             });
 
             conn.on('error', (err) => {
-                this.updateDebugMessage(`Connection failed: ${err.message}`);
+                if (this.activeControllerConnection === conn) {
+                    this.activeControllerConnection = null;
+                }
+                this.isConnected = false;
+                if (err && err.type === 'peer-unavailable') {
+                    this.updateDebugMessage('Controller unavailable. Verify controller is online and sharing a current ID/QR code.');
+                } else {
+                    this.updateDebugMessage(`Connection failed: ${err.message}`);
+                }
                 this.reconnectBtn.classList.remove('hidden');
             });
         } else {
-            setTimeout(() => {
-                this.isConnected = true;
-                this.updateDebugMessage('Connected (demo mode)!');
-            }, 1000);
+            this.isConnected = false;
+            this.updateDebugMessage('Cannot connect: local signaling is offline.');
+            this.reconnectBtn.classList.remove('hidden');
         }
     }
 
     triggerCameras() {
+        const openConnections = this.getOpenConnections();
         this.updateDebugMessage('Triggering all cameras!');
-        
-        this.connections.forEach((conn) => {
-            if (conn.open) {
+
+        openConnections.forEach(({ conn, connectionKey }) => {
+            try {
                 conn.send({ type: 'TAKE_PHOTO', timestamp: Date.now() });
+            } catch (error) {
+                conn.close();
+                this.removeConnection(connectionKey);
             }
         });
         
         this.capturePhoto();
-        this.updateDebugMessage(`Photos triggered on ${this.connections.size + 1} devices!`);
+        this.updateDebugMessage(`Photos triggered on ${openConnections.length + 1} devices!`);
     }
 
     async capturePhoto() {
@@ -667,10 +1108,20 @@ fallbackDownload() {
     stopHosting() {
         this.isController = false;
         
+        // Clear the table refresh interval
+        if (this.devicesTableRefreshInterval) {
+            clearInterval(this.devicesTableRefreshInterval);
+            this.devicesTableRefreshInterval = null;
+        }
+
+        this.stopConnectionHeartbeat();
+        
         this.connections.forEach((conn) => {
             conn.close();
         });
         this.connections.clear();
+        this.connectionTimes.clear();
+        this.connectionLastSeen.clear();
         
         this.updateConnectedCount(0);
         this.updateDebugMessage('Ready to connect');
@@ -683,6 +1134,12 @@ fallbackDownload() {
     backToHome() {
         this.hasJoinedSession = false;
         this.isConnected = false;
+
+        if (this.activeControllerConnection) {
+            this.activeControllerConnection.close();
+            this.activeControllerConnection = null;
+        }
+
         this.updateDebugMessage('Ready to connect');
         this.showScreen(this.homeScreen);
         
