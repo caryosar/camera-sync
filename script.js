@@ -406,22 +406,8 @@ class CameraSyncApp {
         const message = (error && error.message ? error.message : '').toLowerCase();
         const name = error && error.name ? error.name : 'UnknownError';
         const policyBlocked = message.includes('permissions policy') || message.includes('not allowed in this document');
-            handleRemotePhoto(peerId, photo) {
-                const timestamp = photo.timestamp || Date.now();
-                const sourceLabel = `Remote ${peerId.substring(0, 8)}...`;
-                const fileName = photo.filename || `camera_sync_${peerId.substring(0, 8)}_${timestamp}.jpg`;
 
-                this.capturedPhotos.push({
-                    dataURL: photo.dataURL,
-                    timestamp: timestamp,
-                    filename: fileName
-                });
-
-                this.addPhotoToGallery(photo.dataURL, timestamp, { sourceLabel: sourceLabel });
-                this.updateCameraStatus(`Received remote photo (${this.capturedPhotos.length} total)`);
-            }
-
-            async capturePhoto(options = {}) {
+        if (policyBlocked) {
             if (window.top !== window.self) {
                 return 'Camera blocked by document policy. Open this app directly in a browser tab or allow camera on the embedding iframe.';
             }
@@ -477,20 +463,19 @@ class CameraSyncApp {
     }
 
     async requestQRScannerStream() {
-            addPhotoToGallery(dataURL, timestamp, options = {}) {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             this.updateDebugMessage('Browser does not support camera capture for QR scanning.');
             return null;
         }
 
         const hasLiveMainCamera = this.stream && this.stream.getVideoTracks().some((track) => track.readyState === 'live');
-                const sourceLabel = options.sourceLabel || 'Photo';
         if (hasLiveMainCamera) {
             this.qrUsesMainStream = true;
             this.qrStream = this.stream;
             return this.qrStream;
         }
 
-                    <div class="photo-info">${sourceLabel} ${this.capturedPhotos.length}</div>
+        if (this.qrStream) {
             this.qrUsesMainStream = false;
             return this.qrStream;
         }
@@ -901,7 +886,22 @@ class CameraSyncApp {
         this.updateDebugMessage(`Photos triggered on ${openConnections.length + 1} devices!`);
     }
 
-    async capturePhoto() {
+    handleRemotePhoto(peerId, photo) {
+        const timestamp = photo.timestamp || Date.now();
+        const sourceLabel = `Remote ${peerId.substring(0, 8)}...`;
+        const fileName = photo.filename || `camera_sync_${peerId.substring(0, 8)}_${timestamp}.jpg`;
+
+        this.capturedPhotos.push({
+            dataURL: photo.dataURL,
+            timestamp: timestamp,
+            filename: fileName
+        });
+
+        this.addPhotoToGallery(photo.dataURL, timestamp, { sourceLabel: sourceLabel });
+        this.updateCameraStatus(`Received remote photo (${this.capturedPhotos.length} total)`);
+    }
+
+    async capturePhoto(options = {}) {
         if (!this.stream) {
             this.updateCameraStatus('No camera available');
             return;
@@ -935,24 +935,42 @@ class CameraSyncApp {
             timestamp: timestamp,
             filename: `camera_sync_${timestamp}.jpg`
         });
-        
-        this.addPhotoToGallery(dataURL, timestamp);
+
+        this.addPhotoToGallery(dataURL, timestamp, {
+            sourceLabel: this.isController ? 'Controller' : 'Local'
+        });
         this.updateCameraStatus(`Photo ${this.capturedPhotos.length} captured!`);
+
+        if (options.sendToController && this.activeControllerConnection && this.activeControllerConnection.open) {
+            try {
+                this.activeControllerConnection.send({
+                    type: 'PHOTO_CAPTURE',
+                    photo: {
+                        dataURL: dataURL,
+                        timestamp: timestamp,
+                        filename: `camera_sync_${this.myPeerId ? this.myPeerId.substring(0, 8) : 'device'}_${timestamp}.jpg`
+                    }
+                });
+            } catch (error) {
+                this.updateDebugMessage('Photo captured but failed to send to controller.');
+            }
+        }
     }
 
-    addPhotoToGallery(dataURL, timestamp) {
+    addPhotoToGallery(dataURL, timestamp, options = {}) {
         const currentScreen = this.isController ? this.controllerScreen : this.receiverScreen;
         const galleryGrid = currentScreen.querySelector('.gallery-grid');
         const photoCount = currentScreen.querySelector('.photo-count');
         const downloadAllBtn = currentScreen.querySelector('.download-all-btn');
         const clearAllBtn = currentScreen.querySelector('.clear-all-btn');
+        const sourceLabel = options.sourceLabel || 'Photo';
         
         // Create thumbnail
         const photoDiv = document.createElement('div');
         photoDiv.className = 'gallery-photo';
         photoDiv.innerHTML = `
             <img src="${dataURL}" alt="Photo ${this.capturedPhotos.length}">
-            <div class="photo-info">Photo ${this.capturedPhotos.length}</div>
+            <div class="photo-info">${sourceLabel} ${this.capturedPhotos.length}</div>
         `;
         
         galleryGrid.appendChild(photoDiv);
