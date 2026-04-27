@@ -31,6 +31,9 @@ class CameraSyncApp {
         this.currentRecordingMimeType = '';
         this.discardNextRecording = false;
         this.capturedVideos = []; // Store recorded video clips
+        this.recordingSyncLeadTimeMs = 800;
+        this.pendingRecordingStartTimeoutId = null;
+        this.pendingRecordingStopTimeoutId = null;
         
         this.initializeElements();
         this.attachEventListeners();
@@ -370,6 +373,11 @@ class CameraSyncApp {
             if (data.type === 'TAKE_PHOTO') {
                 this.capturePhoto();
                 this.updateDebugMessage('Photo triggered!');
+                return;
+            }
+
+            if (data.type === 'START_RECORDING_ACK' || data.type === 'STOP_RECORDING_ACK') {
+                return;
             }
         });
 
@@ -607,6 +615,60 @@ class CameraSyncApp {
         this.triggerCamerasBtn.disabled = count === 0;
     }
 
+    clearPendingRecordingTimers() {
+        if (this.pendingRecordingStartTimeoutId) {
+            clearTimeout(this.pendingRecordingStartTimeoutId);
+            this.pendingRecordingStartTimeoutId = null;
+        }
+
+        if (this.pendingRecordingStopTimeoutId) {
+            clearTimeout(this.pendingRecordingStopTimeoutId);
+            this.pendingRecordingStopTimeoutId = null;
+        }
+    }
+
+    scheduleRecordingAction(action, triggerAt, timeoutProp) {
+        if (!triggerAt || !Number.isFinite(triggerAt)) {
+            action();
+            return;
+        }
+
+        const delay = Math.max(0, triggerAt - Date.now());
+        if (this[timeoutProp]) {
+            clearTimeout(this[timeoutProp]);
+            this[timeoutProp] = null;
+        }
+
+        if (delay === 0) {
+            action();
+            return;
+        }
+
+        this[timeoutProp] = setTimeout(() => {
+            this[timeoutProp] = null;
+            action();
+        }, delay);
+    }
+
+    broadcastRecordingMessage(type, payload = {}) {
+        const openConnections = this.getOpenConnections();
+
+        openConnections.forEach(({ conn, connectionKey }) => {
+            try {
+                conn.send({
+                    type,
+                    timestamp: Date.now(),
+                    ...payload
+                });
+            } catch (error) {
+                conn.close();
+                this.removeConnection(connectionKey);
+            }
+        });
+
+        return openConnections.length;
+    }
+
     formatConnectedTime(timestamp) {
         const now = Date.now();
         const elapsedMs = now - timestamp;
@@ -791,7 +853,27 @@ class CameraSyncApp {
         return '';
     }
 
-    async startVideoRecording() {
+    async startVideoRecording(options = {}) {
+        const {
+            fromRemote = false,
+            triggerAt = null,
+            sourceLabel = null
+        } = options;
+
+        if (this.isController && !fromRemote) {
+            const syncedTriggerAt = triggerAt || (Date.now() + this.recordingSyncLeadTimeMs);
+            const receiverCount = this.broadcastRecordingMessage('START_RECORDING', {
+                triggerAt: syncedTriggerAt
+            });
+
+            this.scheduleRecordingAction(() => {
+                this.startVideoRecording({ fromRemote: true, sourceLabel: 'Controller Video' });
+            }, syncedTriggerAt, 'pendingRecordingStartTimeoutId');
+
+            this.updateDebugMessage(`Starting synced recording on ${receiverCount + 1} devices...`);
+            return;
+        }
+
         if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
             this.updateDebugMessage('Recording already in progress.');
             return;
@@ -850,7 +932,27 @@ class CameraSyncApp {
         this.updateCameraStatus('Recording video...');
     }
 
-    stopVideoRecording(saveClip = true) {
+    stopVideoRecording(saveClip = true, options = {}) {
+        const {
+            fromRemote = false,
+            triggerAt = null
+        } = options;
+
+        if (this.isController && !fromRemote) {
+            const syncedTriggerAt = triggerAt || (Date.now() + this.recordingSyncLeadTimeMs);
+            const receiverCount = this.broadcastRecordingMessage('STOP_RECORDING', {
+                triggerAt: syncedTriggerAt,
+                saveClip
+            });
+
+            this.scheduleRecordingAction(() => {
+                this.stopVideoRecording(saveClip, { fromRemote: true });
+            }, syncedTriggerAt, 'pendingRecordingStopTimeoutId');
+
+            this.updateDebugMessage(`Stopping synced recording on ${receiverCount + 1} devices...`);
+            return;
+        }
+
         if (!this.mediaRecorder || this.mediaRecorder.state !== 'recording') {
             this.updateDebugMessage('No active recording to stop.');
             return;
@@ -904,7 +1006,7 @@ class CameraSyncApp {
         });
 
         this.addVideoToGallery(objectUrl, durationMs, {
-            sourceLabel: this.isController ? 'Controller Video' : 'Local Video'
+            sourceLabel: sourceLabel || (this.isController ? 'Controller Video' : 'Local Video')
         });
         this.updateCameraStatus(`Video captured (${Math.max(1, Math.round(durationMs / 1000))} sec)`);
         this.updateDebugMessage('Video clip saved.');
@@ -1030,6 +1132,29 @@ class CameraSyncApp {
                 if (data.type === 'TAKE_PHOTO') {
                     this.capturePhoto();
                     this.updateDebugMessage('Photo triggered by controller!');
+                    return;
+                }
+
+                if (data.type === 'START_RECORDING') {
+                    const triggerAt = Number(data.triggerAt);
+                    this.scheduleRecordingAction(() => {
+                        this.startVideoRecording({
+                            fromRemote: true,
+                            sourceLabel: 'Synced Video'
+                        });
+                    }, triggerAt, 'pendingRecordingStartTimeoutId');
+                    this.updateDebugMessage('Synced recording start received.');
+                    return;
+                }
+
+                if (data.type === 'STOP_RECORDING') {
+                    const triggerAt = Number(data.triggerAt);
+                    const saveClip = data.saveClip !== false;
+                    this.scheduleRecordingAction(() => {
+                        this.stopVideoRecording(saveClip, { fromRemote: true });
+                    }, triggerAt, 'pendingRecordingStopTimeoutId');
+                    this.updateDebugMessage('Synced recording stop received.');
+                    return;
                 }
             });
 
@@ -1375,6 +1500,8 @@ fallbackDownload() {
         if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
             this.stopVideoRecording(false);
         }
+
+        this.clearPendingRecordingTimers();
     }
 
     backToHome() {
@@ -1401,6 +1528,8 @@ fallbackDownload() {
         if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
             this.stopVideoRecording(false);
         }
+
+        this.clearPendingRecordingTimers();
     }
 }
 
