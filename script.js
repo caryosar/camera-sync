@@ -25,6 +25,12 @@ class CameraSyncApp {
         this.qrScanAnimationFrameId = null;
         this.qrUsesMainStream = false;
         this.isPeerReady = false;
+        this.mediaRecorder = null;
+        this.recordedChunks = [];
+        this.currentRecordingStart = null;
+        this.currentRecordingMimeType = '';
+        this.discardNextRecording = false;
+        this.capturedVideos = []; // Store recorded video clips
         
         this.initializeElements();
         this.attachEventListeners();
@@ -697,8 +703,10 @@ class CameraSyncApp {
         galleryContainer.className = 'photo-gallery';
         galleryContainer.innerHTML = `
             <div class="gallery-header">
-                <h3>Photos Captured: <span class="photo-count">0</span></h3>
-                <button class="btn blue download-all-btn" disabled>Download All Photos</button>
+                <h3>Media Captured: <span class="photo-count">0</span></h3>
+                <button class="btn orange record-video-btn">Start Recording</button>
+                <button class="btn red stop-recording-btn" disabled>Stop Recording</button>
+                <button class="btn blue download-all-btn" disabled>Download All Media</button>
                 <button class="btn red clear-all-btn" disabled>Clear All</button>
             </div>
             <div class="gallery-grid"></div>
@@ -707,11 +715,199 @@ class CameraSyncApp {
         screen.appendChild(galleryContainer);
         
         // Add event listeners for gallery buttons
+        const recordVideoBtn = galleryContainer.querySelector('.record-video-btn');
+        const stopRecordingBtn = galleryContainer.querySelector('.stop-recording-btn');
         const downloadAllBtn = galleryContainer.querySelector('.download-all-btn');
         const clearAllBtn = galleryContainer.querySelector('.clear-all-btn');
+
+        recordVideoBtn.addEventListener('click', () => this.startVideoRecording());
+        stopRecordingBtn.addEventListener('click', () => this.stopVideoRecording());
         
         downloadAllBtn.addEventListener('click', () => this.downloadAllPhotos());
         clearAllBtn.addEventListener('click', () => this.clearAllPhotos());
+    }
+
+    getTotalCapturedMediaCount() {
+        return this.capturedPhotos.length + this.capturedVideos.length;
+    }
+
+    getCurrentGalleryElements() {
+        const currentScreen = this.isController ? this.controllerScreen : this.receiverScreen;
+        return {
+            currentScreen,
+            galleryGrid: currentScreen.querySelector('.gallery-grid'),
+            photoCount: currentScreen.querySelector('.photo-count'),
+            downloadAllBtn: currentScreen.querySelector('.download-all-btn'),
+            clearAllBtn: currentScreen.querySelector('.clear-all-btn'),
+            recordVideoBtn: currentScreen.querySelector('.record-video-btn'),
+            stopRecordingBtn: currentScreen.querySelector('.stop-recording-btn')
+        };
+    }
+
+    updateGalleryHeaderState() {
+        const { photoCount, downloadAllBtn, clearAllBtn } = this.getCurrentGalleryElements();
+        const totalMedia = this.getTotalCapturedMediaCount();
+
+        if (photoCount) {
+            photoCount.textContent = totalMedia;
+        }
+
+        if (downloadAllBtn) {
+            downloadAllBtn.disabled = totalMedia === 0;
+        }
+
+        if (clearAllBtn) {
+            clearAllBtn.disabled = totalMedia === 0;
+        }
+    }
+
+    updateRecordingButtons() {
+        const { recordVideoBtn, stopRecordingBtn } = this.getCurrentGalleryElements();
+        const isRecording = !!this.mediaRecorder && this.mediaRecorder.state === 'recording';
+
+        if (recordVideoBtn) {
+            recordVideoBtn.disabled = isRecording;
+        }
+
+        if (stopRecordingBtn) {
+            stopRecordingBtn.disabled = !isRecording;
+        }
+    }
+
+    getSupportedRecordingMimeType() {
+        const preferredTypes = [
+            'video/webm;codecs=vp9,opus',
+            'video/webm;codecs=vp8,opus',
+            'video/webm',
+            'video/mp4'
+        ];
+
+        for (const type of preferredTypes) {
+            if (MediaRecorder.isTypeSupported(type)) {
+                return type;
+            }
+        }
+
+        return '';
+    }
+
+    async startVideoRecording() {
+        if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+            this.updateDebugMessage('Recording already in progress.');
+            return;
+        }
+
+        const cameraReady = await this.ensureCameraReady();
+        if (!cameraReady || !this.stream) {
+            this.updateDebugMessage('Cannot start recording without camera access.');
+            return;
+        }
+
+        if (typeof MediaRecorder === 'undefined') {
+            this.updateDebugMessage('This browser does not support video recording.');
+            return;
+        }
+
+        const mimeType = this.getSupportedRecordingMimeType();
+        this.currentRecordingMimeType = mimeType;
+
+        try {
+            const recorderOptions = mimeType ? { mimeType } : undefined;
+            this.mediaRecorder = new MediaRecorder(this.stream, recorderOptions);
+        } catch (error) {
+            this.mediaRecorder = null;
+            this.currentRecordingMimeType = '';
+            this.updateDebugMessage(`Could not start recorder: ${error.message}`);
+            return;
+        }
+
+        this.recordedChunks = [];
+        this.currentRecordingStart = Date.now();
+
+        this.mediaRecorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+                this.recordedChunks.push(event.data);
+            }
+        };
+
+        this.mediaRecorder.onstop = () => {
+            this.finalizeVideoRecording();
+        };
+
+        this.mediaRecorder.onerror = (event) => {
+            const errorMessage = event && event.error ? event.error.message : 'Unknown recording error';
+            this.updateDebugMessage(`Recording error: ${errorMessage}`);
+            this.mediaRecorder = null;
+            this.recordedChunks = [];
+            this.currentRecordingStart = null;
+            this.currentRecordingMimeType = '';
+            this.updateRecordingButtons();
+        };
+
+        this.mediaRecorder.start(250);
+        this.updateRecordingButtons();
+        this.updateDebugMessage('Recording started. Tap Stop Recording to save clip.');
+        this.updateCameraStatus('Recording video...');
+    }
+
+    stopVideoRecording(saveClip = true) {
+        if (!this.mediaRecorder || this.mediaRecorder.state !== 'recording') {
+            this.updateDebugMessage('No active recording to stop.');
+            return;
+        }
+
+        if (!saveClip) {
+            this.discardNextRecording = true;
+        }
+
+        this.mediaRecorder.stop();
+        this.updateDebugMessage('Stopping recording...');
+    }
+
+    finalizeVideoRecording() {
+        const startedAt = this.currentRecordingStart || Date.now();
+        const durationMs = Math.max(0, Date.now() - startedAt);
+        const blobType = this.currentRecordingMimeType || 'video/webm';
+
+        this.mediaRecorder = null;
+        this.currentRecordingStart = null;
+        this.currentRecordingMimeType = '';
+        this.updateRecordingButtons();
+
+        if (this.discardNextRecording) {
+            this.discardNextRecording = false;
+            this.recordedChunks = [];
+            this.updateDebugMessage('Recording discarded.');
+            return;
+        }
+
+        if (this.recordedChunks.length === 0) {
+            this.updateDebugMessage('Recording saved with no data. Try recording again.');
+            this.recordedChunks = [];
+            return;
+        }
+
+        const videoBlob = new Blob(this.recordedChunks, { type: blobType });
+        this.recordedChunks = [];
+
+        const timestamp = Date.now();
+        const extension = blobType.includes('mp4') ? 'mp4' : 'webm';
+        const filename = `camera_sync_video_${timestamp}.${extension}`;
+        const objectUrl = URL.createObjectURL(videoBlob);
+
+        this.capturedVideos.push({
+            blob: videoBlob,
+            timestamp,
+            durationMs,
+            filename,
+            objectUrl
+        });
+
+        this.addVideoToGallery(objectUrl, durationMs, {
+            sourceLabel: this.isController ? 'Controller Video' : 'Local Video'
+        });
+        this.updateCameraStatus(`Video captured (${Math.max(1, Math.round(durationMs / 1000))} sec)`);
+        this.updateDebugMessage('Video clip saved.');
     }
 
     generateQRCode() {
@@ -924,32 +1120,63 @@ class CameraSyncApp {
     }
 
     addPhotoToGallery(dataURL, timestamp, options = {}) {
-        const currentScreen = this.isController ? this.controllerScreen : this.receiverScreen;
-        const galleryGrid = currentScreen.querySelector('.gallery-grid');
-        const photoCount = currentScreen.querySelector('.photo-count');
-        const downloadAllBtn = currentScreen.querySelector('.download-all-btn');
-        const clearAllBtn = currentScreen.querySelector('.clear-all-btn');
+        const { galleryGrid } = this.getCurrentGalleryElements();
+        if (!galleryGrid) {
+            return;
+        }
+
         const sourceLabel = options.sourceLabel || 'Photo';
+        const mediaIndex = this.getTotalCapturedMediaCount();
         
         // Create thumbnail
         const photoDiv = document.createElement('div');
         photoDiv.className = 'gallery-photo';
         photoDiv.innerHTML = `
-            <img src="${dataURL}" alt="Photo ${this.capturedPhotos.length}">
-            <div class="photo-info">${sourceLabel} ${this.capturedPhotos.length}</div>
+            <img src="${dataURL}" alt="Photo ${mediaIndex}">
+            <div class="photo-info">${sourceLabel} ${mediaIndex}</div>
         `;
         
         galleryGrid.appendChild(photoDiv);
-        
-        // Update counter and enable buttons
-        photoCount.textContent = this.capturedPhotos.length;
-        downloadAllBtn.disabled = false;
-        clearAllBtn.disabled = false;
+        this.updateGalleryHeaderState();
+    }
+
+    addVideoToGallery(videoUrl, durationMs, options = {}) {
+        const { galleryGrid } = this.getCurrentGalleryElements();
+        if (!galleryGrid) {
+            return;
+        }
+
+        const sourceLabel = options.sourceLabel || 'Video';
+        const mediaIndex = this.getTotalCapturedMediaCount();
+        const durationSecs = Math.max(1, Math.round(durationMs / 1000));
+
+        const videoDiv = document.createElement('div');
+        videoDiv.className = 'gallery-photo';
+        videoDiv.innerHTML = `
+            <video src="${videoUrl}" controls preload="metadata" muted playsinline></video>
+            <div class="photo-info">${sourceLabel} ${mediaIndex} (${durationSecs}s)</div>
+        `;
+
+        galleryGrid.appendChild(videoDiv);
+        this.updateGalleryHeaderState();
     }
 
 async downloadAllPhotos() {
-    if (this.capturedPhotos.length === 0) {
-        alert('No photos to download');
+    const mediaItems = [
+        ...this.capturedPhotos.map((photo) => ({
+            type: 'photo',
+            filename: photo.filename,
+            dataURL: photo.dataURL
+        })),
+        ...this.capturedVideos.map((video) => ({
+            type: 'video',
+            filename: video.filename,
+            blob: video.blob
+        }))
+    ];
+
+    if (mediaItems.length === 0) {
+        alert('No media to download');
         return;
     }
     
@@ -959,20 +1186,24 @@ async downloadAllPhotos() {
     try {
         const zip = new JSZip();
         
-        // Process photos with progress updates
-        for (let i = 0; i < this.capturedPhotos.length; i++) {
-            const photo = this.capturedPhotos[i];
+        // Process media with progress updates
+        for (let i = 0; i < mediaItems.length; i++) {
+            const mediaItem = mediaItems[i];
             
             // Update progress
-            const progress = Math.round(((i + 1) / this.capturedPhotos.length) * 50); // 50% for adding files
-            this.updateProgress(progressDiv, progress, `Adding photo ${i + 1}/${this.capturedPhotos.length}...`);
+            const progress = Math.round(((i + 1) / mediaItems.length) * 50); // 50% for adding files
+            this.updateProgress(progressDiv, progress, `Adding item ${i + 1}/${mediaItems.length}...`);
             
-            // Convert data URL to blob
-            const response = await fetch(photo.dataURL);
-            const blob = await response.blob();
+            let blob;
+            if (mediaItem.type === 'photo') {
+                const response = await fetch(mediaItem.dataURL);
+                blob = await response.blob();
+            } else {
+                blob = mediaItem.blob;
+            }
             
             // Add to ZIP
-            zip.file(photo.filename, blob);
+            zip.file(mediaItem.filename, blob);
         }
         
         // Generate ZIP with progress
@@ -1007,8 +1238,8 @@ async downloadAllPhotos() {
         
         setTimeout(() => {
             this.removeProgressIndicator(progressDiv);
-            this.updateDebugMessage(`ZIP file with ${this.capturedPhotos.length} photos downloaded!`);
-            this.updateCameraStatus('All photos downloaded as ZIP file!');
+            this.updateDebugMessage(`ZIP file with ${mediaItems.length} media files downloaded!`);
+            this.updateCameraStatus('All media downloaded as ZIP file!');
         }, 1500);
         
     } catch (error) {
@@ -1051,41 +1282,62 @@ removeProgressIndicator(progressDiv) {
 }
 
 fallbackDownload() {
-    this.capturedPhotos.forEach((photo, index) => {
+    const mediaItems = [
+        ...this.capturedPhotos.map((photo) => ({
+            filename: photo.filename,
+            href: photo.dataURL
+        })),
+        ...this.capturedVideos.map((video) => ({
+            filename: video.filename,
+            href: video.objectUrl
+        }))
+    ];
+
+    mediaItems.forEach((item, index) => {
         setTimeout(() => {
             const link = document.createElement('a');
-            link.href = photo.dataURL;
-            link.download = photo.filename;
+            link.href = item.href;
+            link.download = item.filename;
             link.style.display = 'none';
             
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
             
-            if (index === this.capturedPhotos.length - 1) {
-                this.updateDebugMessage(`Fallback: ${this.capturedPhotos.length} photos downloaded individually`);
+            if (index === mediaItems.length - 1) {
+                this.updateDebugMessage(`Fallback: ${mediaItems.length} media files downloaded individually`);
             }
         }, index * 200);
     });
 }
 
     clearAllPhotos() {
-        if (confirm(`Clear all ${this.capturedPhotos.length} photos? This cannot be undone.`)) {
+        const totalMedia = this.getTotalCapturedMediaCount();
+
+        if (confirm(`Clear all ${totalMedia} media files? This cannot be undone.`)) {
+            if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+                this.stopVideoRecording(false);
+            }
+
             this.capturedPhotos = [];
+            this.capturedVideos.forEach((video) => {
+                if (video.objectUrl) {
+                    URL.revokeObjectURL(video.objectUrl);
+                }
+            });
+            this.capturedVideos = [];
             
-            const currentScreen = this.isController ? this.controllerScreen : this.receiverScreen;
-            const galleryGrid = currentScreen.querySelector('.gallery-grid');
-            const photoCount = currentScreen.querySelector('.photo-count');
-            const downloadAllBtn = currentScreen.querySelector('.download-all-btn');
-            const clearAllBtn = currentScreen.querySelector('.clear-all-btn');
+            const { galleryGrid } = this.getCurrentGalleryElements();
             
-            galleryGrid.innerHTML = '';
-            photoCount.textContent = '0';
-            downloadAllBtn.disabled = true;
-            clearAllBtn.disabled = true;
+            if (galleryGrid) {
+                galleryGrid.innerHTML = '';
+            }
+
+            this.updateGalleryHeaderState();
+            this.updateRecordingButtons();
             
-            this.updateDebugMessage('All photos cleared');
-            this.updateCameraStatus('Ready for new photos');
+            this.updateDebugMessage('All media cleared');
+            this.updateCameraStatus('Ready for new captures');
         }
     }
 
@@ -1113,6 +1365,16 @@ fallbackDownload() {
         
         // Clear photos when stopping
         this.capturedPhotos = [];
+        this.capturedVideos.forEach((video) => {
+            if (video.objectUrl) {
+                URL.revokeObjectURL(video.objectUrl);
+            }
+        });
+        this.capturedVideos = [];
+
+        if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+            this.stopVideoRecording(false);
+        }
     }
 
     backToHome() {
@@ -1129,6 +1391,16 @@ fallbackDownload() {
         
         // Clear photos when going home
         this.capturedPhotos = [];
+        this.capturedVideos.forEach((video) => {
+            if (video.objectUrl) {
+                URL.revokeObjectURL(video.objectUrl);
+            }
+        });
+        this.capturedVideos = [];
+
+        if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+            this.stopVideoRecording(false);
+        }
     }
 }
 

@@ -272,6 +272,14 @@ video {
     display: block;
 }
 
+.gallery-photo video {
+    width: 100%;
+    height: 80px;
+    object-fit: cover;
+    display: block;
+    background: #000;
+}
+
 .photo-info {
     padding: 5px;
     font-size: 12px;
