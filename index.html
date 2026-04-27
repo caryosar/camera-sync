@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Camera Sync Web App</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
     <div class="app">
@@ -73,38 +74,8 @@
 
     <!-- Load libraries -->
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-    <script>
-        // Simple QR code generator function
-        function generateQRCode(text, size) {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            const qrSize = size || 200;
-            canvas.width = qrSize;
-            canvas.height = qrSize;
-            
-            ctx.fillStyle = '#000';
-            ctx.fillRect(0, 0, qrSize, qrSize);
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(20, 20, qrSize-40, qrSize-40);
-            ctx.fillStyle = '#000';
-            ctx.font = '12px monospace';
-            ctx.textAlign = 'center';
-            
-            const maxChars = 20;
-            const lines = [];
-            for (let i = 0; i < text.length; i += maxChars) {
-                lines.push(text.substr(i, maxChars));
-            }
-            
-            lines.forEach((line, index) => {
-                ctx.fillText(line, qrSize/2, 60 + (index * 15));
-            });
-            
-            return canvas;
-        }
-    </script>
     <script src="script.js"></script>
 </body>
 </html>

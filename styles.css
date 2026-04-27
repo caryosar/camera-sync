@@ -122,6 +122,36 @@ video {
     color: #333;
 }
 
+#ip-input {
+    width: 100%;
+    padding: 10px;
+    margin: 10px 0 20px 0;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 16px;
+}
+
+#capture-canvas {
+    position: absolute;
+    top: -9999px;
+}
+
+@media (max-width: 480px) {
+    .app {
+        width: 95vw;
+        padding: 15px;
+    }
+    
+    video {
+        height: 250px;
+    }
+    
+    .btn {
+        padding: 12px 20px;
+        font-size: 14px;
+    }
+}
+
 .scanner-modal {
     min-width: 350px;
     max-width: 90vw;
@@ -143,18 +173,35 @@ video {
     margin: 10px 0;
 }
 
-#controller-id-input {
-    width: 100%;
-    padding: 10px;
-    margin: 10px 0 20px 0;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    font-size: 16px;
+.qr-code-container {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    margin: 20px 0;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
 
-#capture-canvas {
-    position: absolute;
-    top: -9999px;
+.qr-code-container canvas {
+    margin: 10px 0;
+}
+
+.qr-instructions {
+    background: #e3f2fd;
+    padding: 15px;
+    margin: 10px 0;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+@media (max-width: 480px) {
+    .scanner-modal {
+        min-width: 300px;
+    }
+    
+    #qr-video {
+        height: 250px;
+    }
 }
 
 /* Photo Gallery Styles */
@@ -222,26 +269,26 @@ video {
     background: #f8f9fa;
 }
 
-/* QR Code container styles */
-.qr-code-container {
-    background: white;
-    padding: 20px;
-    border-radius: 10px;
-    margin: 20px 0;
-    text-align: center;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-}
-
-.qr-code-container canvas {
-    margin: 10px 0;
-}
-
-.qr-instructions {
-    background: #e3f2fd;
-    padding: 15px;
-    margin: 10px 0;
-    border-radius: 8px;
-    font-size: 14px;
+/* Mobile responsive */
+@media (max-width: 480px) {
+    .gallery-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .gallery-header h3 {
+        text-align: center;
+        margin-bottom: 10px;
+    }
+    
+    .gallery-grid {
+        grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+        max-height: 150px;
+    }
+    
+    .gallery-photo img {
+        height: 60px;
+    }
 }
 
 /* Progress indicator styles */
@@ -294,46 +341,3 @@ video {
     font-size: 14px;
 }
 
-/* Mobile responsive */
-@media (max-width: 480px) {
-    .app {
-        width: 95vw;
-        padding: 15px;
-    }
-    
-    video {
-        height: 250px;
-    }
-    
-    .btn {
-        padding: 12px 20px;
-        font-size: 14px;
-    }
-    
-    .gallery-header {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    
-    .gallery-header h3 {
-        text-align: center;
-        margin-bottom: 10px;
-    }
-    
-    .gallery-grid {
-        grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-        max-height: 150px;
-    }
-    
-    .gallery-photo img {
-        height: 60px;
-    }
-    
-    .scanner-modal {
-        min-width: 300px;
-    }
-    
-    #qr-video {
-        height: 250px;
-    }
-}

@@ -4,83 +4,187 @@ class CameraSyncApp {
         this.hasJoinedSession = false;
         this.connectedPeers = 0;
         this.isConnected = false;
+        
         this.stream = null;
         this.peer = null;
         this.connections = new Map();
         this.myPeerId = null;
         this.qrScanning = false;
-        this.capturedPhotos = [];
+        this.capturedPhotos = []; // Store captured photos
         
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => this.init());
-        } else {
-            this.init();
-        }
-    }
-
-    init() {
         this.initializeElements();
         this.attachEventListeners();
         this.requestCameraPermission();
-        setTimeout(() => this.initializePeerJS(), 2000);
+        
+        setTimeout(() => {
+            this.initializePeerJS();
+        }, 1000);
     }
 
     initializeElements() {
-        const elements = {
-            homeScreen: 'home-screen',
-            controllerScreen: 'controller-screen', 
-            receiverScreen: 'receiver-screen',
-            joinModal: 'join-modal',
-            qrScannerModal: 'qr-scanner-modal',
-            idInputModal: 'id-input-modal',
-            connectedCount: 'connected-count',
-            debugMessage: 'debug-message',
-            cameraStatus: 'camera-status',
-            controllerPreview: 'controller-preview',
-            receiverPreview: 'receiver-preview',
-            captureCanvas: 'capture-canvas',
-            qrVideo: 'qr-video',
-            qrCanvas: 'qr-canvas',
-            beControllerBtn: 'be-controller-btn',
-            joinSessionBtn: 'join-session-btn',
-            triggerCamerasBtn: 'trigger-cameras-btn',
-            stopHostingBtn: 'stop-hosting-btn',
-            reconnectBtn: 'reconnect-btn',
-            backHomeBtn: 'back-home-btn',
-            scanQRBtn: 'scan-qr-btn',
-            manualIdBtn: 'manual-id-btn',
-            cancelJoinBtn: 'cancel-join-btn',
-            cancelScanBtn: 'cancel-scan-btn',
-            controllerIdInput: 'controller-id-input',
-            connectManualBtn: 'connect-manual-btn',
-            cancelManualBtn: 'cancel-manual-btn',
-            qrStatus: 'qr-status'
-        };
-
-        for (const [key, id] of Object.entries(elements)) {
-            this[key] = document.getElementById(id);
-        }
+        // Screens
+        this.homeScreen = document.getElementById('home-screen');
+        this.controllerScreen = document.getElementById('controller-screen');
+        this.receiverScreen = document.getElementById('receiver-screen');
+        this.joinModal = document.getElementById('join-modal');
+        this.qrScannerModal = document.getElementById('qr-scanner-modal');
+        this.idInputModal = document.getElementById('id-input-modal');
+        
+        // Status elements
+        this.connectedCount = document.getElementById('connected-count');
+        this.debugMessage = document.getElementById('debug-message');
+        this.cameraStatus = document.getElementById('camera-status');
+        
+        // Video elements
+        this.controllerPreview = document.getElementById('controller-preview');
+        this.receiverPreview = document.getElementById('receiver-preview');
+        this.captureCanvas = document.getElementById('capture-canvas');
+        this.qrVideo = document.getElementById('qr-video');
+        this.qrCanvas = document.getElementById('qr-canvas');
+        
+        // Buttons
+        this.beControllerBtn = document.getElementById('be-controller-btn');
+        this.joinSessionBtn = document.getElementById('join-session-btn');
+        this.triggerCamerasBtn = document.getElementById('trigger-cameras-btn');
+        this.stopHostingBtn = document.getElementById('stop-hosting-btn');
+        this.reconnectBtn = document.getElementById('reconnect-btn');
+        this.backHomeBtn = document.getElementById('back-home-btn');
+        
+        // Join modal buttons
+        this.scanQRBtn = document.getElementById('scan-qr-btn');
+        this.manualIdBtn = document.getElementById('manual-id-btn');
+        this.cancelJoinBtn = document.getElementById('cancel-join-btn');
+        
+        // QR scanner buttons
+        this.cancelScanBtn = document.getElementById('cancel-scan-btn');
+        
+        // Manual input elements
+        this.controllerIdInput = document.getElementById('controller-id-input');
+        this.connectManualBtn = document.getElementById('connect-manual-btn');
+        this.cancelManualBtn = document.getElementById('cancel-manual-btn');
+        
+        // QR elements
+        this.qrStatus = document.getElementById('qr-status');
     }
 
     attachEventListeners() {
-        if (this.beControllerBtn) this.beControllerBtn.addEventListener('click', () => this.becomeController());
-        if (this.joinSessionBtn) this.joinSessionBtn.addEventListener('click', () => this.showJoinModal());
-        if (this.triggerCamerasBtn) this.triggerCamerasBtn.addEventListener('click', () => this.triggerCameras());
-        if (this.stopHostingBtn) this.stopHostingBtn.addEventListener('click', () => this.stopHosting());
-        if (this.reconnectBtn) this.reconnectBtn.addEventListener('click', () => this.showJoinModal());
-        if (this.backHomeBtn) this.backHomeBtn.addEventListener('click', () => this.backToHome());
-        if (this.scanQRBtn) this.scanQRBtn.addEventListener('click', () => this.startQRScanner());
-        if (this.manualIdBtn) this.manualIdBtn.addEventListener('click', () => this.showManualInput());
-        if (this.cancelJoinBtn) this.cancelJoinBtn.addEventListener('click', () => this.hideJoinModal());
-        if (this.cancelScanBtn) this.cancelScanBtn.addEventListener('click', () => this.cancelQRScanner());
-        if (this.connectManualBtn) this.connectManualBtn.addEventListener('click', () => this.connectManually());
-        if (this.cancelManualBtn) this.cancelManualBtn.addEventListener('click', () => this.hideManualInput());
+        this.beControllerBtn.addEventListener('click', () => this.becomeController());
+        this.joinSessionBtn.addEventListener('click', () => this.showJoinModal());
+        this.triggerCamerasBtn.addEventListener('click', () => this.triggerCameras());
+        this.stopHostingBtn.addEventListener('click', () => this.stopHosting());
+        this.reconnectBtn.addEventListener('click', () => this.showJoinModal());
+        this.backHomeBtn.addEventListener('click', () => this.backToHome());
+        
+        // Join modal
+        this.scanQRBtn.addEventListener('click', () => this.startQRScanner());
+        this.manualIdBtn.addEventListener('click', () => this.showManualInput());
+        this.cancelJoinBtn.addEventListener('click', () => this.hideJoinModal());
+        
+        // QR scanner
+        this.cancelScanBtn.addEventListener('click', () => this.cancelQRScanner());
+        
+        // Manual input
+        this.connectManualBtn.addEventListener('click', () => this.connectManually());
+        this.cancelManualBtn.addEventListener('click', () => this.hideManualInput());
+    }
+
+    showJoinModal() {
+        this.joinModal.classList.remove('hidden');
+    }
+
+    hideJoinModal() {
+        this.joinModal.classList.add('hidden');
+    }
+
+    showManualInput() {
+        this.hideJoinModal();
+        this.idInputModal.classList.remove('hidden');
+    }
+
+    hideManualInput() {
+        this.idInputModal.classList.add('hidden');
+    }
+
+    connectManually() {
+        const controllerId = this.controllerIdInput.value.trim();
+        if (!controllerId) {
+            alert('Please enter a Controller ID');
+            return;
+        }
+        
+        this.hideManualInput();
+        this.connectToController(controllerId);
+    }
+
+    initializePeerJS() {
+        this.updateDebugMessage('Initializing connection...');
+        
+        try {
+            this.peer = new Peer({
+                debug: 1
+            });
+
+            this.peer.on('open', (id) => {
+                this.myPeerId = id;
+                this.updateDebugMessage(`Connected! ID: ${id.substring(0, 8)}...`);
+                
+                if (this.isController) {
+                    this.generateQRCode();
+                }
+            });
+
+            this.peer.on('connection', (conn) => {
+                this.handleIncomingConnection(conn);
+            });
+
+            this.peer.on('error', (err) => {
+                this.updateDebugMessage(`Connection error: ${err.type}`);
+                this.fallbackToManualConnection();
+            });
+
+        } catch (error) {
+            this.updateDebugMessage(`Error: ${error.message}`);
+            this.fallbackToManualConnection();
+        }
+    }
+
+    fallbackToManualConnection() {
+        this.myPeerId = 'local-' + Math.random().toString(36).substr(2, 9);
+        
+        if (this.isController) {
+            this.generateQRCode();
+        }
+    }
+
+    handleIncomingConnection(conn) {
+        this.connections.set(conn.peer, conn);
+        
+        conn.on('open', () => {
+            this.updateConnectedCount(this.connections.size);
+            this.updateDebugMessage(`Device connected: ${conn.peer.substring(0, 8)}...`);
+        });
+
+        conn.on('data', (data) => {
+            if (data.type === 'TAKE_PHOTO') {
+                this.capturePhoto();
+                this.updateDebugMessage('Photo triggered!');
+            }
+        });
+
+        conn.on('close', () => {
+            this.connections.delete(conn.peer);
+            this.updateConnectedCount(this.connections.size);
+        });
     }
 
     async requestCameraPermission() {
         try {
             this.stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 }}, 
+                video: { 
+                    facingMode: 'environment',
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }, 
                 audio: false 
             });
             this.updateCameraStatus('Camera ready');
@@ -89,190 +193,251 @@ class CameraSyncApp {
         }
     }
 
-    initializePeerJS() {
-        this.updateDebugMessage('Initializing connection...');
+    startQRScanner() {
+        this.hideJoinModal();
+        
+        if (!this.stream) {
+            this.updateDebugMessage('Camera not available for QR scanning');
+            return;
+        }
+        
+        this.qrVideo.srcObject = this.stream;
+        this.qrScannerModal.classList.remove('hidden');
+        this.qrScanning = true;
+        this.updateDebugMessage('QR Scanner active - point at QR code');
+        
+        this.qrVideo.addEventListener('loadedmetadata', () => {
+            this.scanQRCode();
+        }, { once: true });
+    }
+
+    scanQRCode() {
+        if (!this.qrScanning) return;
+        
+        const canvas = this.qrCanvas;
+        const video = this.qrVideo;
+        
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.height = video.videoHeight;
+            canvas.width = video.videoWidth;
+            
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
+            if (typeof jsQR !== 'undefined') {
+                const code = jsQR(imageData.data, imageData.width, imageData.height);
+                
+                if (code) {
+                    this.handleQRCodeDetected(code.data);
+                    return;
+                }
+            }
+        }
+        
+        requestAnimationFrame(() => this.scanQRCode());
+    }
+
+    handleQRCodeDetected(data) {
         try {
-            if (typeof Peer === 'undefined') {
-                this.fallbackToManualConnection();
+            const qrData = JSON.parse(data);
+            if (qrData.type === 'camera_sync_controller' && qrData.peerId) {
+                this.stopQRScannerAndConnect(qrData.peerId);
                 return;
             }
-            this.peer = new Peer();
-            this.peer.on('open', (id) => {
-                this.myPeerId = id;
-                this.updateDebugMessage(`Connected! ID: ${id.substring(0, 8)}...`);
-                if (this.isController) this.generateQRCode();
-            });
-            this.peer.on('connection', (conn) => this.handleIncomingConnection(conn));
-            this.peer.on('error', (err) => {
-                this.updateDebugMessage(`Connection error: ${err.type}`);
-                this.fallbackToManualConnection();
-            });
         } catch (error) {
-            this.fallbackToManualConnection();
-        }
-    }
-
-    fallbackToManualConnection() {
-        this.myPeerId = 'fallback-' + Math.random().toString(36).substr(2, 9);
-        this.updateDebugMessage('Using offline mode - manual connection only');
-        if (this.isController) this.generateQRCode();
-    }
-
-    handleIncomingConnection(conn) {
-        this.connections.set(conn.peer, conn);
-        conn.on('open', () => {
-            this.updateConnectedCount(this.connections.size);
-            this.updateDebugMessage(`Device connected: ${conn.peer.substring(0, 8)}...`);
-        });
-        conn.on('data', (data) => {
-            if (data.type === 'TAKE_PHOTO') {
-                this.capturePhoto();
-                this.updateDebugMessage('Photo triggered by controller!');
+            if (data && data.length > 5) {
+                this.stopQRScannerAndConnect(data);
+                return;
             }
-        });
-        conn.on('close', () => {
-            this.connections.delete(conn.peer);
-            this.updateConnectedCount(this.connections.size);
-        });
+        }
+        
+        this.qrStatus.textContent = 'Invalid QR code - keep scanning...';
     }
 
-    showJoinModal() { if (this.joinModal) this.joinModal.classList.remove('hidden'); }
-    hideJoinModal() { if (this.joinModal) this.joinModal.classList.add('hidden'); }
-    showManualInput() { this.hideJoinModal(); if (this.idInputModal) this.idInputModal.classList.remove('hidden'); }
-    hideManualInput() { if (this.idInputModal) this.idInputModal.classList.add('hidden'); }
-
-    connectManually() {
-        if (!this.controllerIdInput) return;
-        const controllerId = this.controllerIdInput.value.trim();
-        if (!controllerId) return alert('Please enter a Controller ID');
-        this.hideManualInput();
+    stopQRScannerAndConnect(controllerId) {
+        this.updateDebugMessage('QR Code detected! Connecting...');
+        this.stopQRScanner();
         this.connectToController(controllerId);
     }
 
-    startQRScanner() {
-        this.hideJoinModal();
-        if (!this.stream) {
-            alert('Camera not available. Please check permissions.');
-            this.showJoinModal();
-            return;
-        }
-        if (this.qrVideo && this.qrScannerModal) {
-            this.qrVideo.srcObject = this.stream;
-            this.qrScannerModal.classList.remove('hidden');
-            this.qrScanning = true;
-            this.updateDebugMessage('QR Scanner active - point at QR code');
-        }
-    }
-
-    cancelQRScanner() { this.stopQRScanner(); this.showJoinModal(); }
-    
     stopQRScanner() {
         this.qrScanning = false;
-        if (this.qrVideo) this.qrVideo.srcObject = null;
-        if (this.qrScannerModal) this.qrScannerModal.classList.add('hidden');
-        if (this.qrStatus) this.qrStatus.textContent = 'Position QR code in view';
+        this.qrVideo.srcObject = null;
+        this.qrScannerModal.classList.add('hidden');
+        this.qrStatus.textContent = 'Position QR code in view';
+    }
+
+    cancelQRScanner() {
+        this.stopQRScanner();
+        this.showJoinModal();
     }
 
     showScreen(screen) {
-        [this.homeScreen, this.controllerScreen, this.receiverScreen].forEach(s => {
-            if (s) s.classList.add('hidden');
-        });
-        if (screen) screen.classList.remove('hidden');
+        [this.homeScreen, this.controllerScreen, this.receiverScreen].forEach(s => s.classList.add('hidden'));
+        screen.classList.remove('hidden');
     }
 
     updateDebugMessage(message) {
-        if (this.debugMessage) this.debugMessage.textContent = message;
+        console.log('Debug:', message);
+        this.debugMessage.textContent = message;
     }
 
     updateCameraStatus(status) {
-        if (this.cameraStatus) this.cameraStatus.textContent = `Camera Status: ${status}`;
+        this.cameraStatus.textContent = `Camera Status: ${status}`;
     }
 
     updateConnectedCount(count) {
         this.connectedPeers = count;
-        if (this.connectedCount) this.connectedCount.textContent = count;
-        if (this.triggerCamerasBtn) this.triggerCamerasBtn.disabled = count === 0;
+        this.connectedCount.textContent = count;
+        this.triggerCamerasBtn.disabled = count === 0;
     }
 
     async becomeController() {
         this.isController = true;
         this.showScreen(this.controllerScreen);
-        if (this.stream && this.controllerPreview) {
+        
+        if (this.stream) {
             this.controllerPreview.srcObject = this.stream;
-        } else {
-            await this.requestCameraPermission();
-            if (this.stream && this.controllerPreview) this.controllerPreview.srcObject = this.stream;
         }
+        
         this.createPhotoGallery('controller');
         this.startHosting();
     }
 
     startHosting() {
         this.updateDebugMessage('Starting controller...');
-        if (this.myPeerId) this.generateQRCode();
-        else this.updateDebugMessage('Waiting for connection...');
+        
+        if (this.myPeerId) {
+            this.generateQRCode();
+        } else {
+            this.updateDebugMessage('Waiting for connection...');
+        }
+    }
+
+    createPhotoGallery(screenType) {
+        const screen = screenType === 'controller' ? this.controllerScreen : this.receiverScreen;
+        
+        // Remove existing gallery if any
+        const existingGallery = screen.querySelector('.photo-gallery');
+        if (existingGallery) {
+            existingGallery.remove();
+        }
+        
+        const galleryContainer = document.createElement('div');
+        galleryContainer.className = 'photo-gallery';
+        galleryContainer.innerHTML = `
+            <div class="gallery-header">
+                <h3>Photos Captured: <span class="photo-count">0</span></h3>
+                <button class="btn blue download-all-btn" disabled>Download All Photos</button>
+                <button class="btn red clear-all-btn" disabled>Clear All</button>
+            </div>
+            <div class="gallery-grid"></div>
+        `;
+        
+        screen.appendChild(galleryContainer);
+        
+        // Add event listeners for gallery buttons
+        const downloadAllBtn = galleryContainer.querySelector('.download-all-btn');
+        const clearAllBtn = galleryContainer.querySelector('.clear-all-btn');
+        
+        downloadAllBtn.addEventListener('click', () => this.downloadAllPhotos());
+        clearAllBtn.addEventListener('click', () => this.clearAllPhotos());
     }
 
     generateQRCode() {
         this.updateDebugMessage('Creating connection code...');
-        const existingQR = this.controllerScreen?.querySelector('.qr-code-container');
-        if (existingQR) existingQR.remove();
+        
+        const existingQR = this.controllerScreen.querySelector('.qr-code-container');
+        if (existingQR) {
+            existingQR.remove();
+        }
         
         const qrContainer = document.createElement('div');
         qrContainer.className = 'qr-code-container';
-        const qrCanvas = generateQRCode(this.myPeerId, 200);
         
-        qrContainer.innerHTML = `
-            <div class="qr-instructions">
-                <strong>Connection Options:</strong><br>
-                1. Other devices can scan this QR code, OR<br>
-                2. Share this ID manually: <br>
-                <input type="text" value="${this.myPeerId}" readonly 
-                       style="width: 100%; padding: 8px; margin: 8px 0; font-family: monospace; 
-                              background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px;"
-                       onclick="this.select()">
-                <small>Tap ID above to copy</small>
-            </div>`;
-        
-        qrContainer.appendChild(qrCanvas);
-        const insertBefore = this.controllerScreen?.querySelector('.photo-gallery') || this.controllerScreen?.querySelector('#trigger-cameras-btn');
-        if (insertBefore && this.controllerScreen) {
-            this.controllerScreen.insertBefore(qrContainer, insertBefore);
+        try {
+            const qr = qrcode(0, 'M');
+            qr.addData(this.myPeerId);
+            qr.make();
+            
+            const qrHTML = qr.createImgTag(4, 8);
+            
+            qrContainer.innerHTML = `
+                <div class="qr-instructions">
+                    <strong>Connection Options:</strong><br>
+                    1. Other devices can scan this QR code, OR<br>
+                    2. Share this ID manually: <br>
+                    <input type="text" value="${this.myPeerId}" readonly 
+                           style="width: 100%; padding: 8px; margin: 8px 0; font-family: monospace; 
+                                  background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px;"
+                           onclick="this.select()">
+                    <small>Tap ID above to copy</small>
+                </div>
+                ${qrHTML}
+            `;
+            
+            // Insert before photo gallery
+            const photoGallery = this.controllerScreen.querySelector('.photo-gallery');
+            this.controllerScreen.insertBefore(qrContainer, photoGallery);
             this.updateDebugMessage('QR Code ready - waiting for connections');
+            
+        } catch (error) {
+            qrContainer.innerHTML = `
+                <div class="qr-instructions">
+                    <strong>QR Code failed - use manual connection</strong><br>
+                    Share this ID: <br>
+                    <input type="text" value="${this.myPeerId}" readonly 
+                           style="width: 100%; padding: 10px; margin: 10px 0; font-family: monospace; 
+                                  background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; font-size: 16px;"
+                           onclick="this.select()">
+                    <small>Tap to select and copy</small>
+                </div>
+            `;
+            const photoGallery = this.controllerScreen.querySelector('.photo-gallery');
+            this.controllerScreen.insertBefore(qrContainer, photoGallery);
+            this.updateDebugMessage('Ready - share the ID above');
         }
     }
 
     connectToController(controllerId) {
         this.hasJoinedSession = true;
         this.showScreen(this.receiverScreen);
-        if (this.stream && this.receiverPreview) {
+        
+        if (this.stream) {
             this.receiverPreview.srcObject = this.stream;
             this.updateCameraStatus('Camera ready for photos');
         }
+        
         this.createPhotoGallery('receiver');
         this.updateDebugMessage(`Connecting to: ${controllerId.substring(0, 8)}...`);
         
         if (this.peer && this.peer.open) {
             const conn = this.peer.connect(controllerId);
+            
             conn.on('open', () => {
                 this.isConnected = true;
                 this.updateDebugMessage('Connected to controller!');
-                if (this.reconnectBtn) this.reconnectBtn.classList.add('hidden');
+                this.reconnectBtn.classList.add('hidden');
             });
+
             conn.on('data', (data) => {
                 if (data.type === 'TAKE_PHOTO') {
                     this.capturePhoto();
                     this.updateDebugMessage('Photo triggered by controller!');
                 }
             });
+
             conn.on('close', () => {
                 this.isConnected = false;
                 this.updateDebugMessage('Disconnected from controller');
-                if (this.reconnectBtn) this.reconnectBtn.classList.remove('hidden');
+                this.reconnectBtn.classList.remove('hidden');
             });
+
             conn.on('error', (err) => {
                 this.updateDebugMessage(`Connection failed: ${err.message}`);
-                if (this.reconnectBtn) this.reconnectBtn.classList.remove('hidden');
+                this.reconnectBtn.classList.remove('hidden');
             });
         } else {
             setTimeout(() => {
@@ -282,49 +447,32 @@ class CameraSyncApp {
         }
     }
 
-    createPhotoGallery(screenType) {
-        const screen = screenType === 'controller' ? this.controllerScreen : this.receiverScreen;
-        if (!screen) return;
-        
-        const existingGallery = screen.querySelector('.photo-gallery');
-        if (existingGallery) existingGallery.remove();
-        
-        const galleryContainer = document.createElement('div');
-        galleryContainer.className = 'photo-gallery';
-        galleryContainer.innerHTML = `
-            <div class="gallery-header">
-                <h3>Photos Captured: <span class="photo-count">0</span></h3>
-                <button class="btn blue download-all-btn" disabled>Download All as ZIP</button>
-                <button class="btn red clear-all-btn" disabled>Clear All</button>
-            </div>
-            <div class="gallery-grid"></div>`;
-        
-        screen.appendChild(galleryContainer);
-        
-        const downloadBtn = galleryContainer.querySelector('.download-all-btn');
-        const clearBtn = galleryContainer.querySelector('.clear-all-btn');
-        
-        if (downloadBtn) downloadBtn.addEventListener('click', () => this.downloadAllPhotos());
-        if (clearBtn) clearBtn.addEventListener('click', () => this.clearAllPhotos());
-    }
-
     triggerCameras() {
         this.updateDebugMessage('Triggering all cameras!');
+        
         this.connections.forEach((conn) => {
-            if (conn.open) conn.send({ type: 'TAKE_PHOTO', timestamp: Date.now() });
+            if (conn.open) {
+                conn.send({ type: 'TAKE_PHOTO', timestamp: Date.now() });
+            }
         });
+        
         this.capturePhoto();
         this.updateDebugMessage(`Photos triggered on ${this.connections.size + 1} devices!`);
     }
 
     async capturePhoto() {
-        if (!this.stream) return this.updateCameraStatus('No camera available');
+        if (!this.stream) {
+            this.updateCameraStatus('No camera available');
+            return;
+        }
+
         const canvas = this.captureCanvas;
         const video = this.isController ? this.controllerPreview : this.receiverPreview;
         
         if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
             this.updateCameraStatus('Video not ready - restoring...');
-            if (this.stream && video) {
+            
+            if (this.stream) {
                 video.srcObject = this.stream;
                 setTimeout(() => this.capturePhoto(), 1000);
             }
@@ -333,16 +481,18 @@ class CameraSyncApp {
         
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
+        
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0);
         
+        // Convert to data URL and store in memory
         const dataURL = canvas.toDataURL('image/jpeg', 0.95);
         const timestamp = Date.now();
         
         this.capturedPhotos.push({
             dataURL: dataURL,
             timestamp: timestamp,
-            filename: `camera_sync_photo_${timestamp}.jpg`
+            filename: `camera_sync_${timestamp}.jpg`
         });
         
         this.addPhotoToGallery(dataURL, timestamp);
@@ -351,125 +501,183 @@ class CameraSyncApp {
 
     addPhotoToGallery(dataURL, timestamp) {
         const currentScreen = this.isController ? this.controllerScreen : this.receiverScreen;
-        if (!currentScreen) return;
-        
         const galleryGrid = currentScreen.querySelector('.gallery-grid');
         const photoCount = currentScreen.querySelector('.photo-count');
         const downloadAllBtn = currentScreen.querySelector('.download-all-btn');
         const clearAllBtn = currentScreen.querySelector('.clear-all-btn');
         
-        if (galleryGrid) {
-            const photoDiv = document.createElement('div');
-            photoDiv.className = 'gallery-photo';
-            photoDiv.innerHTML = `
-                <img src="${dataURL}" alt="Photo">
-                <div class="photo-info">Photo ${this.capturedPhotos.length}</div>`;
-            galleryGrid.appendChild(photoDiv);
-        }
+        // Create thumbnail
+        const photoDiv = document.createElement('div');
+        photoDiv.className = 'gallery-photo';
+        photoDiv.innerHTML = `
+            <img src="${dataURL}" alt="Photo ${this.capturedPhotos.length}">
+            <div class="photo-info">Photo ${this.capturedPhotos.length}</div>
+        `;
         
-        if (photoCount) photoCount.textContent = this.capturedPhotos.length;
-        if (downloadAllBtn) downloadAllBtn.disabled = false;
-        if (clearAllBtn) clearAllBtn.disabled = false;
+        galleryGrid.appendChild(photoDiv);
+        
+        // Update counter and enable buttons
+        photoCount.textContent = this.capturedPhotos.length;
+        downloadAllBtn.disabled = false;
+        clearAllBtn.disabled = false;
     }
 
-    async downloadAllPhotos() {
-        if (this.capturedPhotos.length === 0) return alert('No photos to download');
+async downloadAllPhotos() {
+    if (this.capturedPhotos.length === 0) {
+        alert('No photos to download');
+        return;
+    }
+    
+    // Create progress indicator
+    const progressDiv = this.createProgressIndicator();
+    
+    try {
+        const zip = new JSZip();
         
-        const progressDiv = this.createProgressIndicator();
-        try {
-            const zip = new JSZip();
-            for (let i = 0; i < this.capturedPhotos.length; i++) {
-                const photo = this.capturedPhotos[i];
-                const progress = Math.round(((i + 1) / this.capturedPhotos.length) * 50);
-                this.updateProgress(progressDiv, progress, `Adding photo ${i + 1}/${this.capturedPhotos.length}...`);
-                
-                const response = await fetch(photo.dataURL);
-                const blob = await response.blob();
-                zip.file(photo.filename, blob);
-            }
+        // Process photos with progress updates
+        for (let i = 0; i < this.capturedPhotos.length; i++) {
+            const photo = this.capturedPhotos[i];
             
-            this.updateProgress(progressDiv, 75, 'Generating ZIP file...');
-            const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 }});
-            this.updateProgress(progressDiv, 90, 'Preparing download...');
+            // Update progress
+            const progress = Math.round(((i + 1) / this.capturedPhotos.length) * 50); // 50% for adding files
+            this.updateProgress(progressDiv, progress, `Adding photo ${i + 1}/${this.capturedPhotos.length}...`);
             
-            const url = URL.createObjectURL(zipBlob);
+            // Convert data URL to blob
+            const response = await fetch(photo.dataURL);
+            const blob = await response.blob();
+            
+            // Add to ZIP
+            zip.file(photo.filename, blob);
+        }
+        
+        // Generate ZIP with progress
+        this.updateProgress(progressDiv, 75, 'Generating ZIP file...');
+        
+        const zipBlob = await zip.generateAsync({ 
+            type: 'blob',
+            compression: 'DEFLATE',
+            compressionOptions: { level: 6 }
+        });
+        
+        // Download ZIP
+        this.updateProgress(progressDiv, 90, 'Preparing download...');
+        
+        const url = URL.createObjectURL(zipBlob);
+        const link = document.createElement('a');
+        
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+        const deviceType = this.isController ? 'controller' : 'receiver';
+        link.href = url;
+        link.download = `camera_sync_${deviceType}_${timestamp}.zip`;
+        link.style.display = 'none';
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        URL.revokeObjectURL(url);
+        
+        // Complete
+        this.updateProgress(progressDiv, 100, 'Download complete!');
+        
+        setTimeout(() => {
+            this.removeProgressIndicator(progressDiv);
+            this.updateDebugMessage(`ZIP file with ${this.capturedPhotos.length} photos downloaded!`);
+            this.updateCameraStatus('All photos downloaded as ZIP file!');
+        }, 1500);
+        
+    } catch (error) {
+        console.error('ZIP creation failed:', error);
+        this.removeProgressIndicator(progressDiv);
+        this.updateDebugMessage('ZIP creation failed - trying individual downloads...');
+        this.fallbackDownload();
+    }
+}
+
+createProgressIndicator() {
+    const progressDiv = document.createElement('div');
+    progressDiv.className = 'download-progress';
+    progressDiv.innerHTML = `
+        <div class="progress-content">
+            <h4>Creating ZIP File</h4>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: 0%"></div>
+            </div>
+            <p class="progress-text">Starting...</p>
+        </div>
+    `;
+    
+    document.body.appendChild(progressDiv);
+    return progressDiv;
+}
+
+updateProgress(progressDiv, percentage, text) {
+    const fill = progressDiv.querySelector('.progress-fill');
+    const textEl = progressDiv.querySelector('.progress-text');
+    
+    fill.style.width = `${percentage}%`;
+    textEl.textContent = text;
+}
+
+removeProgressIndicator(progressDiv) {
+    if (progressDiv && progressDiv.parentNode) {
+        document.body.removeChild(progressDiv);
+    }
+}
+
+fallbackDownload() {
+    this.capturedPhotos.forEach((photo, index) => {
+        setTimeout(() => {
             const link = document.createElement('a');
-            const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-            const deviceType = this.isController ? 'controller' : 'receiver';
-            
-            link.href = url;
-            link.download = `camera_sync_${deviceType}_${this.capturedPhotos.length}photos_${timestamp}.zip`;
+            link.href = photo.dataURL;
+            link.download = photo.filename;
             link.style.display = 'none';
+            
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            URL.revokeObjectURL(url);
             
-            this.updateProgress(progressDiv, 100, 'Download complete!');
-            setTimeout(() => {
-                this.removeProgressIndicator(progressDiv);
-                this.updateDebugMessage(`ZIP file with ${this.capturedPhotos.length} photos downloaded!`);
-                this.updateCameraStatus('All photos downloaded as ZIP file!');
-            }, 1500);
-        } catch (error) {
-            this.removeProgressIndicator(progressDiv);
-            this.updateDebugMessage('ZIP creation failed');
-            this.updateCameraStatus('Download failed - please try again');
-        }
-    }
+            if (index === this.capturedPhotos.length - 1) {
+                this.updateDebugMessage(`Fallback: ${this.capturedPhotos.length} photos downloaded individually`);
+            }
+        }, index * 200);
+    });
+}
 
     clearAllPhotos() {
         if (confirm(`Clear all ${this.capturedPhotos.length} photos? This cannot be undone.`)) {
             this.capturedPhotos = [];
             
             const currentScreen = this.isController ? this.controllerScreen : this.receiverScreen;
-            const galleryGrid = currentScreen?.querySelector('.gallery-grid');
-            const photoCount = currentScreen?.querySelector('.photo-count');
-            const downloadAllBtn = currentScreen?.querySelector('.download-all-btn');
-            const clearAllBtn = currentScreen?.querySelector('.clear-all-btn');
+            const galleryGrid = currentScreen.querySelector('.gallery-grid');
+            const photoCount = currentScreen.querySelector('.photo-count');
+            const downloadAllBtn = currentScreen.querySelector('.download-all-btn');
+            const clearAllBtn = currentScreen.querySelector('.clear-all-btn');
             
-            if (galleryGrid) galleryGrid.innerHTML = '';
-            if (photoCount) photoCount.textContent = '0';
-            if (downloadAllBtn) downloadAllBtn.disabled = true;
-            if (clearAllBtn) clearAllBtn.disabled = true;
+            galleryGrid.innerHTML = '';
+            photoCount.textContent = '0';
+            downloadAllBtn.disabled = true;
+            clearAllBtn.disabled = true;
             
             this.updateDebugMessage('All photos cleared');
             this.updateCameraStatus('Ready for new photos');
         }
     }
 
-    createProgressIndicator() {
-        const progressDiv = document.createElement('div');
-        progressDiv.className = 'download-progress';
-        progressDiv.innerHTML = `
-            <div class="progress-content">
-                <h4>Creating ZIP File</h4>
-                <div class="progress-bar"><div class="progress-fill" style="width: 0%"></div></div>
-                <p class="progress-text">Starting...</p>
-            </div>`;
-        document.body.appendChild(progressDiv);
-        return progressDiv;
-    }
-
-    updateProgress(progressDiv, percentage, text) {
-        progressDiv.querySelector('.progress-fill').style.width = `${percentage}%`;
-        progressDiv.querySelector('.progress-text').textContent = text;
-    }
-
-    removeProgressIndicator(progressDiv) {
-        if (progressDiv && progressDiv.parentNode) document.body.removeChild(progressDiv);
-    }
-
     stopHosting() {
         this.isController = false;
-        this.connections.forEach((conn) => conn.close());
+        
+        this.connections.forEach((conn) => {
+            conn.close();
+        });
         this.connections.clear();
+        
         this.updateConnectedCount(0);
         this.updateDebugMessage('Ready to connect');
         this.showScreen(this.homeScreen);
+        
+        // Clear photos when stopping
         this.capturedPhotos = [];
-        const qrContainer = this.controllerScreen?.querySelector('.qr-code-container');
-        if (qrContainer) qrContainer.remove();
     }
 
     backToHome() {
@@ -477,9 +685,12 @@ class CameraSyncApp {
         this.isConnected = false;
         this.updateDebugMessage('Ready to connect');
         this.showScreen(this.homeScreen);
+        
+        // Clear photos when going home
         this.capturedPhotos = [];
     }
 }
 
-// Initialize the app
-new CameraSyncApp();
+document.addEventListener('DOMContentLoaded', () => {
+    new CameraSyncApp();
+});
