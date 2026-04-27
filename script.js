@@ -23,19 +23,40 @@ class CameraSyncApp {
     }
 
     initializeElements() {
-        // Get all DOM elements
-        ['homeScreen', 'controllerScreen', 'receiverScreen', 'joinModal', 'qrScannerModal', 'idInputModal'].forEach(id => {
-            this[id] = document.getElementById(id.replace(/([A-Z])/g, '-$1').toLowerCase());
-        });
-        ['connectedCount', 'debugMessage', 'cameraStatus'].forEach(id => {
-            this[id] = document.getElementById(id.replace(/([A-Z])/g, '-$1').toLowerCase());
-        });
-        ['controllerPreview', 'receiverPreview', 'captureCanvas', 'qrVideo', 'qrCanvas'].forEach(id => {
-            this[id] = document.getElementById(id.replace(/([A-Z])/g, '-$1').toLowerCase());
-        });
-        ['beControllerBtn', 'joinSessionBtn', 'triggerCamerasBtn', 'stopHostingBtn', 'reconnectBtn', 'backHomeBtn', 'scanQRBtn', 'manualIdBtn', 'cancelJoinBtn', 'cancelScanBtn', 'controllerIdInput', 'connectManualBtn', 'cancelManualBtn'].forEach(id => {
-            this[id] = document.getElementById(id.replace(/([A-Z])/g, '-$1').toLowerCase().replace('-btn', '-btn'));
-        });
+        // Screens
+        this.homeScreen = document.getElementById('home-screen');
+        this.controllerScreen = document.getElementById('controller-screen');
+        this.receiverScreen = document.getElementById('receiver-screen');
+        this.joinModal = document.getElementById('join-modal');
+        this.qrScannerModal = document.getElementById('qr-scanner-modal');
+        this.idInputModal = document.getElementById('id-input-modal');
+        
+        // Status elements
+        this.connectedCount = document.getElementById('connected-count');
+        this.debugMessage = document.getElementById('debug-message');
+        this.cameraStatus = document.getElementById('camera-status');
+        
+        // Video elements
+        this.controllerPreview = document.getElementById('controller-preview');
+        this.receiverPreview = document.getElementById('receiver-preview');
+        this.captureCanvas = document.getElementById('capture-canvas');
+        this.qrVideo = document.getElementById('qr-video');
+        this.qrCanvas = document.getElementById('qr-canvas');
+        
+        // Buttons
+        this.beControllerBtn = document.getElementById('be-controller-btn');
+        this.joinSessionBtn = document.getElementById('join-session-btn');
+        this.triggerCamerasBtn = document.getElementById('trigger-cameras-btn');
+        this.stopHostingBtn = document.getElementById('stop-hosting-btn');
+        this.reconnectBtn = document.getElementById('reconnect-btn');
+        this.backHomeBtn = document.getElementById('back-home-btn');
+        this.scanQRBtn = document.getElementById('scan-qr-btn');
+        this.manualIdBtn = document.getElementById('manual-id-btn');
+        this.cancelJoinBtn = document.getElementById('cancel-join-btn');
+        this.cancelScanBtn = document.getElementById('cancel-scan-btn');
+        this.controllerIdInput = document.getElementById('controller-id-input');
+        this.connectManualBtn = document.getElementById('connect-manual-btn');
+        this.cancelManualBtn = document.getElementById('cancel-manual-btn');
         this.qrStatus = document.getElementById('qr-status');
     }
 
@@ -54,12 +75,29 @@ class CameraSyncApp {
         this.cancelManualBtn.addEventListener('click', () => this.hideManualInput());
     }
 
-    showJoinModal() { this.joinModal.classList.remove('hidden'); }
-    hideJoinModal() { this.joinModal.classList.add('hidden'); }
-    showManualInput() { this.hideJoinModal(); this.idInputModal.classList.remove('hidden'); }
-    hideManualInput() { this.idInputModal.classList.add('hidden'); }
+    showJoinModal() { 
+        console.log('Showing join modal');
+        this.joinModal.classList.remove('hidden'); 
+    }
+    
+    hideJoinModal() { 
+        console.log('Hiding join modal');
+        this.joinModal.classList.add('hidden'); 
+    }
+    
+    showManualInput() { 
+        console.log('Showing manual input');
+        this.hideJoinModal(); 
+        this.idInputModal.classList.remove('hidden'); 
+    }
+    
+    hideManualInput() { 
+        console.log('Hiding manual input');
+        this.idInputModal.classList.add('hidden'); 
+    }
 
     connectManually() {
+        console.log('Connect manually clicked');
         const controllerId = this.controllerIdInput.value.trim();
         if (!controllerId) return alert('Please enter a Controller ID');
         this.hideManualInput();
@@ -118,18 +156,28 @@ class CameraSyncApp {
     async requestCameraPermission() {
         try {
             this.stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 }}, 
+                video: { 
+                    facingMode: 'environment', 
+                    width: { ideal: 1280 }, 
+                    height: { ideal: 720 }
+                }, 
                 audio: false 
             });
             this.updateCameraStatus('Camera ready');
+            console.log('Camera stream obtained:', this.stream);
         } catch (error) {
+            console.error('Camera error:', error);
             this.updateCameraStatus(`Camera error: ${error.message}`);
         }
     }
 
     startQRScanner() {
+        console.log('Starting QR scanner');
         this.hideJoinModal();
-        if (!this.stream) return this.updateDebugMessage('Camera not available for QR scanning');
+        if (!this.stream) {
+            console.error('No camera stream available');
+            return this.updateDebugMessage('Camera not available for QR scanning');
+        }
         this.qrVideo.srcObject = this.stream;
         this.qrScannerModal.classList.remove('hidden');
         this.qrScanning = true;
@@ -180,7 +228,11 @@ class CameraSyncApp {
         this.qrStatus.textContent = 'Position QR code in view';
     }
 
-    cancelQRScanner() { this.stopQRScanner(); this.showJoinModal(); }
+    cancelQRScanner() { 
+        console.log('Canceling QR scanner');
+        this.stopQRScanner(); 
+        this.showJoinModal(); 
+    }
 
     showScreen(screen) {
         [this.homeScreen, this.controllerScreen, this.receiverScreen].forEach(s => s.classList.add('hidden'));
@@ -192,7 +244,10 @@ class CameraSyncApp {
         this.debugMessage.textContent = message;
     }
 
-    updateCameraStatus(status) { this.cameraStatus.textContent = `Camera Status: ${status}`; }
+    updateCameraStatus(status) { 
+        console.log('Camera status:', status);
+        this.cameraStatus.textContent = `Camera Status: ${status}`; 
+    }
 
     updateConnectedCount(count) {
         this.connectedPeers = count;
@@ -201,9 +256,22 @@ class CameraSyncApp {
     }
 
     async becomeController() {
+        console.log('Becoming controller, stream available:', !!this.stream);
         this.isController = true;
         this.showScreen(this.controllerScreen);
-        if (this.stream) this.controllerPreview.srcObject = this.stream;
+        
+        if (this.stream) {
+            console.log('Setting controller preview stream');
+            this.controllerPreview.srcObject = this.stream;
+        } else {
+            console.error('No stream available for controller preview');
+            // Try to get camera again
+            await this.requestCameraPermission();
+            if (this.stream) {
+                this.controllerPreview.srcObject = this.stream;
+            }
+        }
+        
         this.createPhotoGallery('controller');
         this.startHosting();
     }
@@ -289,12 +357,18 @@ class CameraSyncApp {
     }
 
     connectToController(controllerId) {
+        console.log('Connecting to controller:', controllerId);
         this.hasJoinedSession = true;
         this.showScreen(this.receiverScreen);
+        
         if (this.stream) {
+            console.log('Setting receiver preview stream');
             this.receiverPreview.srcObject = this.stream;
             this.updateCameraStatus('Camera ready for photos');
+        } else {
+            console.error('No stream available for receiver preview');
         }
+        
         this.createPhotoGallery('receiver');
         this.updateDebugMessage(`Connecting to: ${controllerId.substring(0, 8)}...`);
         
@@ -632,33 +706,4 @@ class CameraSyncApp {
     }
 
     updateProgress(progressDiv, percentage, text) {
-        progressDiv.querySelector('.progress-fill').style.width = `${percentage}%`;
-        progressDiv.querySelector('.progress-text').textContent = text;
-    }
-
-    removeProgressIndicator(progressDiv) {
-        if (progressDiv && progressDiv.parentNode) document.body.removeChild(progressDiv);
-    }
-
-    stopHosting() {
-        this.isController = false;
-        this.connections.forEach((conn) => conn.close());
-        this.connections.clear();
-        this.updateConnectedCount(0);
-        this.updateDebugMessage('Ready to connect');
-        this.showScreen(this.homeScreen);
-        this.capturedPhotos = [];
-        const qrContainer = this.controllerScreen.querySelector('.qr-code-container');
-        if (qrContainer) qrContainer.remove();
-    }
-
-    backToHome() {
-        this.hasJoinedSession = false;
-        this.isConnected = false;
-        this.updateDebugMessage('Ready to connect');
-        this.showScreen(this.homeScreen);
-        this.capturedPhotos = [];
-    }
-}
-
-document.addEventListener('DOMContentLoaded', () => new CameraSyncApp());
+        progressDiv.querySelector('.progress-fill').style.width = `
