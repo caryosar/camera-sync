@@ -341,3 +341,91 @@ video {
     font-size: 14px;
 }
 
+/* Recording controls */
+.recording-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.recording-timer {
+    font-family: monospace;
+    font-size: 18px;
+    font-weight: bold;
+    color: #666;
+    min-width: 50px;
+}
+
+.download-controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* Gallery updates */
+.gallery-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+/* Video media styles */
+.video-media {
+    position: relative;
+}
+
+.video-media video {
+    width: 100%;
+    height: 80px;
+    object-fit: cover;
+    display: block;
+    cursor: pointer;
+}
+
+.media-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 80px;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+    cursor: pointer;
+}
+
+.play-icon {
+    color: white;
+    font-size: 24px;
+}
+
+.media-info {
+    padding: 5px;
+    font-size: 12px;
+    text-align: center;
+    color: #666;
+    background: #f8f9fa;
+}
+
+/* Mobile responsive updates */
+@media (max-width: 480px) {
+    .gallery-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .recording-controls, .download-controls {
+        justify-content: center;
+    }
+    
+    .recording-timer {
+        font-size: 16px;
+    }
+}
