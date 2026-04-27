@@ -29,6 +29,7 @@ class CameraSyncApp {
         this.recordedChunks = [];
         this.currentRecordingStart = null;
         this.currentRecordingMimeType = '';
+        this.currentRecordingSourceLabel = '';
         this.discardNextRecording = false;
         this.capturedVideos = []; // Store recorded video clips
         this.recordingSyncLeadTimeMs = 800;
@@ -627,7 +628,18 @@ class CameraSyncApp {
         }
     }
 
+    clearPendingPhotoTimer() {
+        if (this.pendingPhotoTimeoutId) {
+            clearTimeout(this.pendingPhotoTimeoutId);
+            this.pendingPhotoTimeoutId = null;
+        }
+    }
+
     scheduleRecordingAction(action, triggerAt, timeoutProp) {
+        this.scheduleTimedAction(action, triggerAt, timeoutProp);
+    }
+
+    scheduleTimedAction(action, triggerAt, timeoutProp) {
         if (!triggerAt || !Number.isFinite(triggerAt)) {
             action();
             return;
@@ -860,6 +872,8 @@ class CameraSyncApp {
             sourceLabel = null
         } = options;
 
+        this.currentRecordingSourceLabel = sourceLabel || '';
+
         if (this.isController && !fromRemote) {
             const syncedTriggerAt = triggerAt || (Date.now() + this.recordingSyncLeadTimeMs);
             const receiverCount = this.broadcastRecordingMessage('START_RECORDING', {
@@ -899,6 +913,7 @@ class CameraSyncApp {
         } catch (error) {
             this.mediaRecorder = null;
             this.currentRecordingMimeType = '';
+            this.currentRecordingSourceLabel = '';
             this.updateDebugMessage(`Could not start recorder: ${error.message}`);
             return;
         }
@@ -923,6 +938,7 @@ class CameraSyncApp {
             this.recordedChunks = [];
             this.currentRecordingStart = null;
             this.currentRecordingMimeType = '';
+            this.currentRecordingSourceLabel = '';
             this.updateRecordingButtons();
         };
 
@@ -974,6 +990,8 @@ class CameraSyncApp {
         this.mediaRecorder = null;
         this.currentRecordingStart = null;
         this.currentRecordingMimeType = '';
+        const sourceLabel = this.currentRecordingSourceLabel;
+        this.currentRecordingSourceLabel = '';
         this.updateRecordingButtons();
 
         if (this.discardNextRecording) {
@@ -1188,19 +1206,28 @@ class CameraSyncApp {
 
     triggerCameras() {
         const openConnections = this.getOpenConnections();
-        this.updateDebugMessage('Triggering all cameras!');
+        const triggerAt = Date.now() + this.photoSyncLeadTimeMs;
+
+        this.updateDebugMessage('Triggering all cameras...');
 
         openConnections.forEach(({ conn, connectionKey }) => {
             try {
-                conn.send({ type: 'TAKE_PHOTO', timestamp: Date.now() });
+                conn.send({
+                    type: 'TAKE_PHOTO_AT',
+                    timestamp: Date.now(),
+                    triggerAt
+                });
             } catch (error) {
                 conn.close();
                 this.removeConnection(connectionKey);
             }
         });
-        
-        this.capturePhoto();
-        this.updateDebugMessage(`Photos triggered on ${openConnections.length + 1} devices!`);
+
+        this.scheduleTimedAction(() => {
+            this.capturePhoto();
+        }, triggerAt, 'pendingPhotoTimeoutId');
+
+        this.updateDebugMessage(`Photo trigger scheduled for ${openConnections.length + 1} devices!`);
     }
 
     async capturePhoto() {
@@ -1211,27 +1238,26 @@ class CameraSyncApp {
 
         const canvas = this.captureCanvas;
         const video = this.isController ? this.controllerPreview : this.receiverPreview;
-        
+
         if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
             this.updateCameraStatus('Video not ready - restoring...');
-            
+
             if (this.stream) {
                 video.srcObject = this.stream;
                 setTimeout(() => this.capturePhoto(), 1000);
             }
             return;
         }
-        
+
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
-        
+
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0);
-        
-        // Convert to data URL and store in memory
+
         const dataURL = canvas.toDataURL('image/jpeg', 0.95);
         const timestamp = Date.now();
-        
+
         this.capturedPhotos.push({
             dataURL: dataURL,
             timestamp: timestamp,
