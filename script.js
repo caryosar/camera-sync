@@ -10,13 +10,7 @@ class CameraSyncApp {
         this.myPeerId = null;
         this.qrScanning = false;
         this.capturedPhotos = [];
-        this.mediaRecorder = null;
-        this.recordedChunks = [];
-        this.isRecording = false;
-        this.recordingStartTime = null;
-        this.recordingTimer = null;
         
-        // Wait for DOM to be ready
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => this.init());
         } else {
@@ -25,7 +19,6 @@ class CameraSyncApp {
     }
 
     init() {
-        console.log('Initializing app...');
         this.initializeElements();
         this.attachEventListeners();
         this.requestCameraPermission();
@@ -33,7 +26,6 @@ class CameraSyncApp {
     }
 
     initializeElements() {
-        console.log('Getting DOM elements...');
         const elements = {
             homeScreen: 'home-screen',
             controllerScreen: 'controller-screen', 
@@ -67,7 +59,6 @@ class CameraSyncApp {
 
         for (const [key, id] of Object.entries(elements)) {
             this[key] = document.getElementById(id);
-            if (!this[key]) console.error(`Element not found: ${id}`);
         }
     }
 
@@ -133,7 +124,12 @@ class CameraSyncApp {
             this.updateConnectedCount(this.connections.size);
             this.updateDebugMessage(`Device connected: ${conn.peer.substring(0, 8)}...`);
         });
-        conn.on('data', (data) => this.handleReceivedData(data));
+        conn.on('data', (data) => {
+            if (data.type === 'TAKE_PHOTO') {
+                this.capturePhoto();
+                this.updateDebugMessage('Photo triggered by controller!');
+            }
+        });
         conn.on('close', () => {
             this.connections.delete(conn.peer);
             this.updateConnectedCount(this.connections.size);
@@ -164,6 +160,7 @@ class CameraSyncApp {
             this.qrVideo.srcObject = this.stream;
             this.qrScannerModal.classList.remove('hidden');
             this.qrScanning = true;
+            this.updateDebugMessage('QR Scanner active - point at QR code');
         }
     }
 
@@ -173,6 +170,7 @@ class CameraSyncApp {
         this.qrScanning = false;
         if (this.qrVideo) this.qrVideo.srcObject = null;
         if (this.qrScannerModal) this.qrScannerModal.classList.add('hidden');
+        if (this.qrStatus) this.qrStatus.textContent = 'Position QR code in view';
     }
 
     showScreen(screen) {
@@ -261,7 +259,12 @@ class CameraSyncApp {
                 this.updateDebugMessage('Connected to controller!');
                 if (this.reconnectBtn) this.reconnectBtn.classList.add('hidden');
             });
-            conn.on('data', (data) => this.handleReceivedData(data));
+            conn.on('data', (data) => {
+                if (data.type === 'TAKE_PHOTO') {
+                    this.capturePhoto();
+                    this.updateDebugMessage('Photo triggered by controller!');
+                }
+            });
             conn.on('close', () => {
                 this.isConnected = false;
                 this.updateDebugMessage('Disconnected from controller');
@@ -279,19 +282,6 @@ class CameraSyncApp {
         }
     }
 
-    handleReceivedData(data) {
-        if (data.type === 'TAKE_PHOTO') {
-            this.capturePhoto();
-            this.updateDebugMessage('Photo triggered by controller!');
-        } else if (data.type === 'START_RECORDING') {
-            this.startVideoRecording();
-            this.updateDebugMessage('Video recording started by controller!');
-        } else if (data.type === 'STOP_RECORDING') {
-            this.stopVideoRecording();
-            this.updateDebugMessage('Video recording stopped by controller!');
-        }
-    }
-
     createPhotoGallery(screenType) {
         const screen = screenType === 'controller' ? this.controllerScreen : this.receiverScreen;
         if (!screen) return;
@@ -303,16 +293,9 @@ class CameraSyncApp {
         galleryContainer.className = 'photo-gallery';
         galleryContainer.innerHTML = `
             <div class="gallery-header">
-                <h3>Media Captured: <span class="media-count">0</span></h3>
-                <div class="recording-controls">
-                    <button class="btn red start-recording-btn">Start Recording</button>
-                    <button class="btn gray stop-recording-btn" disabled>Stop Recording</button>
-                    <span class="recording-timer">00:00</span>
-                </div>
-                <div class="download-controls">
-                    <button class="btn blue download-all-btn" disabled>Download All as ZIP</button>
-                    <button class="btn red clear-all-btn" disabled>Clear All</button>
-                </div>
+                <h3>Photos Captured: <span class="photo-count">0</span></h3>
+                <button class="btn blue download-all-btn" disabled>Download All as ZIP</button>
+                <button class="btn red clear-all-btn" disabled>Clear All</button>
             </div>
             <div class="gallery-grid"></div>`;
         
@@ -320,13 +303,9 @@ class CameraSyncApp {
         
         const downloadBtn = galleryContainer.querySelector('.download-all-btn');
         const clearBtn = galleryContainer.querySelector('.clear-all-btn');
-        const startRecBtn = galleryContainer.querySelector('.start-recording-btn');
-        const stopRecBtn = galleryContainer.querySelector('.stop-recording-btn');
         
-        if (downloadBtn) downloadBtn.addEventListener('click', () => this.downloadAllMedia());
-        if (clearBtn) clearBtn.addEventListener('click', () => this.clearAllMedia());
-        if (startRecBtn) startRecBtn.addEventListener('click', () => this.startVideoRecording());
-        if (stopRecBtn) stopRecBtn.addEventListener('click', () => this.stopVideoRecording());
+        if (downloadBtn) downloadBtn.addEventListener('click', () => this.downloadAllPhotos());
+        if (clearBtn) clearBtn.addEventListener('click', () => this.clearAllPhotos());
     }
 
     triggerCameras() {
@@ -363,13 +342,11 @@ class CameraSyncApp {
         this.capturedPhotos.push({
             dataURL: dataURL,
             timestamp: timestamp,
-            filename: `camera_sync_photo_${timestamp}.jpg`,
-            type: 'photo'
+            filename: `camera_sync_photo_${timestamp}.jpg`
         });
         
         this.addPhotoToGallery(dataURL, timestamp);
-        const photoCount = this.capturedPhotos.filter(item => item.type === 'photo').length;
-        this.updateCameraStatus(`Photo ${photoCount} captured!`);
+        this.updateCameraStatus(`Photo ${this.capturedPhotos.length} captured!`);
     }
 
     addPhotoToGallery(dataURL, timestamp) {
@@ -377,7 +354,7 @@ class CameraSyncApp {
         if (!currentScreen) return;
         
         const galleryGrid = currentScreen.querySelector('.gallery-grid');
-        const mediaCount = currentScreen.querySelector('.media-count');
+        const photoCount = currentScreen.querySelector('.photo-count');
         const downloadAllBtn = currentScreen.querySelector('.download-all-btn');
         const clearAllBtn = currentScreen.querySelector('.clear-all-btn');
         
@@ -386,174 +363,29 @@ class CameraSyncApp {
             photoDiv.className = 'gallery-photo';
             photoDiv.innerHTML = `
                 <img src="${dataURL}" alt="Photo">
-                <div class="photo-info">Photo ${this.capturedPhotos.filter(item => item.type === 'photo').length}</div>`;
+                <div class="photo-info">Photo ${this.capturedPhotos.length}</div>`;
             galleryGrid.appendChild(photoDiv);
         }
         
-        if (mediaCount) mediaCount.textContent = this.capturedPhotos.length;
+        if (photoCount) photoCount.textContent = this.capturedPhotos.length;
         if (downloadAllBtn) downloadAllBtn.disabled = false;
         if (clearAllBtn) clearAllBtn.disabled = false;
     }
 
-    async startVideoRecording() {
-        if (!this.stream) return this.updateCameraStatus('No camera available for recording');
-        try {
-            this.mediaRecorder = new MediaRecorder(this.stream, { mimeType: 'video/webm' });
-            this.recordedChunks = [];
-            this.isRecording = true;
-            this.recordingStartTime = Date.now();
-
-            this.mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) this.recordedChunks.push(event.data);
-            };
-            this.mediaRecorder.onstop = () => this.processRecordedVideo();
-            this.mediaRecorder.start(1000);
-            this.updateRecordingUI(true);
-            this.startRecordingTimer();
-
-            if (this.isController) {
-                this.connections.forEach((conn) => {
-                    if (conn.open) conn.send({ type: 'START_RECORDING', timestamp: Date.now() });
-                });
-            }
-
-            this.updateCameraStatus('Recording video...');
-            this.updateDebugMessage('Video recording started');
-        } catch (error) {
-            this.updateCameraStatus(`Recording failed: ${error.message}`);
-        }
-    }
-
-    stopVideoRecording() {
-        if (!this.isRecording || !this.mediaRecorder) return;
-        this.mediaRecorder.stop();
-        this.isRecording = false;
-        this.updateRecordingUI(false);
-        this.stopRecordingTimer();
-
-        if (this.isController) {
-            this.connections.forEach((conn) => {
-                if (conn.open) conn.send({ type: 'STOP_RECORDING', timestamp: Date.now() });
-            });
-        }
-
-        this.updateCameraStatus('Processing video...');
-        this.updateDebugMessage('Video recording stopped');
-    }
-
-    processRecordedVideo() {
-        const blob = new Blob(this.recordedChunks, { type: 'video/webm' });
-        const timestamp = Date.now();
-        const duration = Math.round((timestamp - this.recordingStartTime) / 1000);
-
-        this.capturedPhotos.push({
-            blob: blob,
-            timestamp: timestamp,
-            filename: `camera_sync_video_${timestamp}.webm`,
-            type: 'video',
-            duration: duration
-        });
-
-        this.addVideoToGallery(blob, timestamp, duration);
-        this.updateCameraStatus(`Video recorded! Duration: ${duration}s`);
-        this.recordedChunks = [];
-    }
-
-    addVideoToGallery(blob, timestamp, duration) {
-        const currentScreen = this.isController ? this.controllerScreen : this.receiverScreen;
-        if (!currentScreen) return;
-        
-        const galleryGrid = currentScreen.querySelector('.gallery-grid');
-        const mediaCount = currentScreen.querySelector('.media-count');
-        const downloadAllBtn = currentScreen.querySelector('.download-all-btn');
-        const clearAllBtn = currentScreen.querySelector('.clear-all-btn');
-
-        if (galleryGrid) {
-            const videoURL = URL.createObjectURL(blob);
-            const mediaDiv = document.createElement('div');
-            mediaDiv.className = 'gallery-media video-media';
-            mediaDiv.innerHTML = `
-                <video src="${videoURL}" muted></video>
-                <div class="media-overlay"><span class="play-icon">▶</span></div>
-                <div class="media-info">Video ${duration}s</div>`;
-
-            const video = mediaDiv.querySelector('video');
-            const overlay = mediaDiv.querySelector('.media-overlay');
-            
-            mediaDiv.addEventListener('click', () => {
-                if (video.paused) {
-                    video.play();
-                    overlay.style.opacity = '0';
-                } else {
-                    video.pause();
-                    overlay.style.opacity = '1';
-                }
-            });
-
-            video.addEventListener('ended', () => overlay.style.opacity = '1');
-            galleryGrid.appendChild(mediaDiv);
-        }
-
-        if (mediaCount) mediaCount.textContent = this.capturedPhotos.length;
-        if (downloadAllBtn) downloadAllBtn.disabled = false;
-        if (clearAllBtn) clearAllBtn.disabled = false;
-    }
-
-    updateRecordingUI(isRecording) {
-        const currentScreen = this.isController ? this.controllerScreen : this.receiverScreen;
-        const startBtn = currentScreen?.querySelector('.start-recording-btn');
-        const stopBtn = currentScreen?.querySelector('.stop-recording-btn');
-        const timer = currentScreen?.querySelector('.recording-timer');
-
-        if (startBtn) {
-            startBtn.disabled = isRecording;
-            startBtn.textContent = isRecording ? 'Recording...' : 'Start Recording';
-        }
-        if (stopBtn) stopBtn.disabled = !isRecording;
-        if (timer) {
-            timer.style.color = isRecording ? '#FF3B30' : '#666';
-            timer.style.fontWeight = isRecording ? 'bold' : 'normal';
-        }
-    }
-
-    startRecordingTimer() {
-        this.recordingTimer = setInterval(() => {
-            if (this.recordingStartTime) {
-                const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
-                const minutes = Math.floor(elapsed / 60);
-                const seconds = elapsed % 60;
-                const currentScreen = this.isController ? this.controllerScreen : this.receiverScreen;
-                const timer = currentScreen?.querySelector('.recording-timer');
-                if (timer) timer.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-            }
-        }, 1000);
-    }
-
-    stopRecordingTimer() {
-        if (this.recordingTimer) {
-            clearInterval(this.recordingTimer);
-            this.recordingTimer = null;
-        }
-    }
-
-    async downloadAllMedia() {
-        if (this.capturedPhotos.length === 0) return alert('No media to download');
-        if (this.isRecording) {
-            this.stopVideoRecording();
-            await new Promise(resolve => setTimeout(resolve, 1000));
-        }
+    async downloadAllPhotos() {
+        if (this.capturedPhotos.length === 0) return alert('No photos to download');
         
         const progressDiv = this.createProgressIndicator();
         try {
             const zip = new JSZip();
             for (let i = 0; i < this.capturedPhotos.length; i++) {
-                const media = this.capturedPhotos[i];
+                const photo = this.capturedPhotos[i];
                 const progress = Math.round(((i + 1) / this.capturedPhotos.length) * 50);
-                const mediaType = media.type === 'video' ? 'video' : 'photo';
-                this.updateProgress(progressDiv, progress, `Adding ${mediaType} ${i + 1}/${this.capturedPhotos.length}...`);
+                this.updateProgress(progressDiv, progress, `Adding photo ${i + 1}/${this.capturedPhotos.length}...`);
                 
-                let blob = media.type === 'video' ? media.blob : await fetch(media.dataURL).then(r => r.blob());
-                zip.file(media.filename, blob);
+                const response = await fetch(photo.dataURL);
+                const blob = await response.blob();
+                zip.file(photo.filename, blob);
             }
             
             this.updateProgress(progressDiv, 75, 'Generating ZIP file...');
@@ -564,11 +396,9 @@ class CameraSyncApp {
             const link = document.createElement('a');
             const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
             const deviceType = this.isController ? 'controller' : 'receiver';
-            const photoCount = this.capturedPhotos.filter(item => item.type === 'photo').length;
-            const videoCount = this.capturedPhotos.filter(item => item.type === 'video').length;
             
             link.href = url;
-            link.download = `camera_sync_${deviceType}_${photoCount}photos_${videoCount}videos_${timestamp}.zip`;
+            link.download = `camera_sync_${deviceType}_${this.capturedPhotos.length}photos_${timestamp}.zip`;
             link.style.display = 'none';
             document.body.appendChild(link);
             link.click();
@@ -578,8 +408,8 @@ class CameraSyncApp {
             this.updateProgress(progressDiv, 100, 'Download complete!');
             setTimeout(() => {
                 this.removeProgressIndicator(progressDiv);
-                this.updateDebugMessage(`ZIP file with ${photoCount} photos and ${videoCount} videos downloaded!`);
-                this.updateCameraStatus('All media downloaded as ZIP file!');
+                this.updateDebugMessage(`ZIP file with ${this.capturedPhotos.length} photos downloaded!`);
+                this.updateCameraStatus('All photos downloaded as ZIP file!');
             }, 1500);
         } catch (error) {
             this.removeProgressIndicator(progressDiv);
@@ -588,30 +418,23 @@ class CameraSyncApp {
         }
     }
 
-    clearAllMedia() {
-        const photoCount = this.capturedPhotos.filter(item => item.type === 'photo').length;
-        const videoCount = this.capturedPhotos.filter(item => item.type === 'video').length;
-        
-        if (confirm(`Clear all ${photoCount} photos and ${videoCount} videos? This cannot be undone.`)) {
-            if (this.isRecording) this.stopVideoRecording();
-            this.capturedPhotos.forEach(media => {
-                if (media.type === 'video' && media.blob) URL.revokeObjectURL(URL.createObjectURL(media.blob));
-            });
+    clearAllPhotos() {
+        if (confirm(`Clear all ${this.capturedPhotos.length} photos? This cannot be undone.`)) {
             this.capturedPhotos = [];
             
             const currentScreen = this.isController ? this.controllerScreen : this.receiverScreen;
             const galleryGrid = currentScreen?.querySelector('.gallery-grid');
-            const mediaCount = currentScreen?.querySelector('.media-count');
+            const photoCount = currentScreen?.querySelector('.photo-count');
             const downloadAllBtn = currentScreen?.querySelector('.download-all-btn');
             const clearAllBtn = currentScreen?.querySelector('.clear-all-btn');
             
             if (galleryGrid) galleryGrid.innerHTML = '';
-            if (mediaCount) mediaCount.textContent = '0';
+            if (photoCount) photoCount.textContent = '0';
             if (downloadAllBtn) downloadAllBtn.disabled = true;
             if (clearAllBtn) clearAllBtn.disabled = true;
             
-            this.updateDebugMessage('All media cleared');
-            this.updateCameraStatus('Ready for new photos and videos');
+            this.updateDebugMessage('All photos cleared');
+            this.updateCameraStatus('Ready for new photos');
         }
     }
 

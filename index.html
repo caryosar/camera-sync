@@ -71,7 +71,7 @@
         <canvas id="capture-canvas" class="hidden"></canvas>
     </div>
 
-    <!-- Load libraries in correct order -->
+    <!-- Load libraries -->
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
@@ -84,7 +84,6 @@
             canvas.width = qrSize;
             canvas.height = qrSize;
             
-            // Simple pattern - just display the text for now
             ctx.fillStyle = '#000';
             ctx.fillRect(0, 0, qrSize, qrSize);
             ctx.fillStyle = '#fff';
@@ -93,7 +92,6 @@
             ctx.font = '12px monospace';
             ctx.textAlign = 'center';
             
-            // Split text into lines
             const maxChars = 20;
             const lines = [];
             for (let i = 0; i < text.length; i += maxChars) {
