@@ -360,10 +360,6 @@ class CameraSyncApp {
             if (data.type === 'PONG' || data.type === 'HELLO') {
                 return;
             }
-            if (data.type === 'PHOTO_CAPTURE' && data.photo && data.photo.dataURL) {
-                this.handleRemotePhoto(conn.peer, data.photo);
-                return;
-            }
 
             if (data.type === 'TAKE_PHOTO') {
                 this.capturePhoto();
@@ -836,7 +832,7 @@ class CameraSyncApp {
                 }
 
                 if (data.type === 'TAKE_PHOTO') {
-                    this.capturePhoto({ sendToController: true });
+                    this.capturePhoto();
                     this.updateDebugMessage('Photo triggered by controller!');
                 }
             });
@@ -886,22 +882,7 @@ class CameraSyncApp {
         this.updateDebugMessage(`Photos triggered on ${openConnections.length + 1} devices!`);
     }
 
-    handleRemotePhoto(peerId, photo) {
-        const timestamp = photo.timestamp || Date.now();
-        const sourceLabel = `Remote ${peerId.substring(0, 8)}...`;
-        const fileName = photo.filename || `camera_sync_${peerId.substring(0, 8)}_${timestamp}.jpg`;
-
-        this.capturedPhotos.push({
-            dataURL: photo.dataURL,
-            timestamp: timestamp,
-            filename: fileName
-        });
-
-        this.addPhotoToGallery(photo.dataURL, timestamp, { sourceLabel: sourceLabel });
-        this.updateCameraStatus(`Received remote photo (${this.capturedPhotos.length} total)`);
-    }
-
-    async capturePhoto(options = {}) {
+    async capturePhoto() {
         if (!this.stream) {
             this.updateCameraStatus('No camera available');
             return;
@@ -940,21 +921,6 @@ class CameraSyncApp {
             sourceLabel: this.isController ? 'Controller' : 'Local'
         });
         this.updateCameraStatus(`Photo ${this.capturedPhotos.length} captured!`);
-
-        if (options.sendToController && this.activeControllerConnection && this.activeControllerConnection.open) {
-            try {
-                this.activeControllerConnection.send({
-                    type: 'PHOTO_CAPTURE',
-                    photo: {
-                        dataURL: dataURL,
-                        timestamp: timestamp,
-                        filename: `camera_sync_${this.myPeerId ? this.myPeerId.substring(0, 8) : 'device'}_${timestamp}.jpg`
-                    }
-                });
-            } catch (error) {
-                this.updateDebugMessage('Photo captured but failed to send to controller.');
-            }
-        }
     }
 
     addPhotoToGallery(dataURL, timestamp, options = {}) {
