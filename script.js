@@ -371,6 +371,15 @@ class CameraSyncApp {
                 return;
             }
 
+            if (data.type === 'TAKE_PHOTO_AT') {
+                const triggerAt = Number(data.triggerAt);
+                this.scheduleTimedAction(() => {
+                    this.capturePhoto();
+                }, triggerAt, 'pendingPhotoTimeoutId');
+                this.updateDebugMessage('Photo trigger received.');
+                return;
+            }
+
             if (data.type === 'TAKE_PHOTO') {
                 this.capturePhoto();
                 this.updateDebugMessage('Photo triggered!');
@@ -1144,6 +1153,15 @@ class CameraSyncApp {
 
                 if (data.type === 'PING') {
                     conn.send({ type: 'PONG', timestamp: Date.now() });
+                    return;
+                }
+
+                if (data.type === 'TAKE_PHOTO_AT') {
+                    const triggerAt = Number(data.triggerAt);
+                    this.scheduleTimedAction(() => {
+                        this.capturePhoto();
+                    }, triggerAt, 'pendingPhotoTimeoutId');
+                    this.updateDebugMessage('Photo trigger received from controller.');
                     return;
                 }
 
