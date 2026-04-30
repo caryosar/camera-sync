@@ -4,9 +4,7 @@ class CameraSyncApp {
         this.hasJoinedSession = false;
         this.connectedPeers = 0;
         this.isConnected = false;
-        this.defaultMaxDevices = 8;
-        this.absoluteMaxDevices = 32;
-        this.maxConnectedDevices = this.resolveMaxDevices();
+        this.maxConnectedDevices = Infinity;
         this.heartbeatIntervalMs = 10000;
         this.connectionTimeoutMs = 30000;
         
@@ -190,15 +188,8 @@ class CameraSyncApp {
     }
 
     resolveMaxDevices() {
-        const params = new URLSearchParams(window.location.search);
-        const requested = Number.parseInt(params.get('maxDevices'), 10);
-
-        if (!Number.isFinite(requested)) {
-            return this.defaultMaxDevices;
-        }
-
-        const clamped = Math.max(1, Math.min(this.absoluteMaxDevices, requested));
-        return clamped;
+        // No maximum device limit
+        return Infinity;
     }
 
     getConnectionKey(conn) {
@@ -267,24 +258,8 @@ class CameraSyncApp {
     }
 
     canAcceptConnection(conn) {
-        const openConnections = this.getOpenConnectionCount();
-        if (openConnections < this.maxConnectedDevices) {
-            return true;
-        }
-
-        try {
-            conn.send({
-                type: 'SESSION_FULL',
-                maxDevices: this.maxConnectedDevices,
-                message: `Controller is at capacity (${this.maxConnectedDevices} devices)`
-            });
-        } catch (error) {
-            // Ignore send failures for rejected peers.
-        }
-
-        conn.close();
-        this.updateDebugMessage(`Rejected ${conn.peer.substring(0, 8)}... (session full: ${this.maxConnectedDevices})`);
-        return false;
+        // Always accept connections, no limit
+        return true;
     }
 
     initializePeerJS() {
