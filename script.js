@@ -31,8 +31,24 @@ class CameraSyncApp {
         this.discardNextRecording = false;
         this.capturedVideos = []; // Store recorded video clips
         this.recordingSyncLeadTimeMs = 800;
+        this.photoSyncLeadTimeMs = 800;
         this.pendingRecordingStartTimeoutId = null;
         this.pendingRecordingStopTimeoutId = null;
+        this.peerServerHost = '10.77.77.1';
+        this.peerServerPort = 9000;
+        this.turnServerPort = 3478;
+        this.turnUsername = 'camera';
+        this.turnCredential = 'sync';
+        
+        // Device health tracking (controller only)
+        this.deviceHealth = new Map(); // connectionKey -> health state
+        this.commandTracker = new Map(); // commandId -> { connectionKey, type, sentAt, ackAt, status, reason }
+        this.nextCommandId = 1;
+        this.healthDashboardRefreshInterval = null;
+        this.connectedHealthy = 0; // Count of devices with last ack success
+        this.missedStartAcks = 0;
+        this.missedStopAcks = 0;
+        this.ackTimeoutMs = 3000;
         
         this.initializeElements();
         this.attachEventListeners();
@@ -93,6 +109,11 @@ class CameraSyncApp {
         
         // Connected devices table elements
         this.devicesTableBody = document.getElementById('devices-table-body');
+        
+        // Health dashboard elements
+        this.healthDashboard = document.getElementById('health-dashboard');
+        this.healthSummary = document.getElementById('health-summary');
+        this.deviceHealthBody = document.getElementById('device-health-body');
     }
 
     attachEventListeners() {
@@ -222,6 +243,148 @@ class CameraSyncApp {
         this.updateDevicesTable();
     }
 
+    stopHealthDashboard() {
+        if (this.healthDashboardRefreshInterval) {
+            clearInterval(this.healthDashboardRefreshInterval);
+            this.healthDashboardRefreshInterval = null;
+        }
+    }
+
+    startHealthDashboard() {
+        this.stopHealthDashboard();
+        
+        // Refresh health dashboard every 500ms for real-time updates
+        this.healthDashboardRefreshInterval = setInterval(() => {
+            this.updateHealthDashboard();
+        }, 500);
+    }
+
+    getDeviceHealthState(connectionKey) {
+        if (!this.deviceHealth.has(connectionKey)) {
+            this.deviceHealth.set(connectionKey, {
+                connectionKey,
+                peerId: '',
+                state: 'joining', // joining, connected, healthy, unhealthy
+                lastPing: 0,
+                lastPingAt: Date.now(),
+                lastSeen: Date.now(),
+                lastCommandId: null,
+                lastCommandType: null,
+                lastAckStatus: null,
+                lastAckLatency: 0,
+                lastError: '',
+                commandCount: 0,
+                ackSuccessCount: 0,
+                ackFailCount: 0
+            });
+        }
+        return this.deviceHealth.get(connectionKey);
+    }
+
+    recordPing(connectionKey, latency) {
+        const health = this.getDeviceHealthState(connectionKey);
+        health.lastPing = latency;
+        health.lastPingAt = Date.now();
+        health.lastSeen = Date.now();
+    }
+
+    recordCommandSent(connectionKey, commandId, commandType) {
+        const health = this.getDeviceHealthState(connectionKey);
+        health.lastCommandId = commandId;
+        health.lastCommandType = commandType;
+        health.commandCount++;
+    }
+
+    recordAck(connectionKey, commandId, status, reason, latency) {
+        const health = this.getDeviceHealthState(connectionKey);
+        health.lastAckStatus = status;
+        health.lastAckLatency = latency;
+        health.lastError = reason || '';
+        health.lastSeen = Date.now();
+        
+        if (status === 'ok') {
+            health.ackSuccessCount++;
+            health.state = 'healthy';
+        } else {
+            health.ackFailCount++;
+            health.state = 'unhealthy';
+        }
+    }
+
+    updateHealthDashboard() {
+        if (!this.isController || !this.healthDashboard) {
+            return;
+        }
+
+        // Calculate KPIs
+        this.connectedHealthy = 0;
+        this.missedStartAcks = 0;
+        this.missedStopAcks = 0;
+        let totalAcks = 0;
+        let successAcks = 0;
+        let medianLatency = 0;
+        const latencies = [];
+
+        this.deviceHealth.forEach((health) => {
+            if (health.state === 'healthy') {
+                this.connectedHealthy++;
+            }
+            if (health.lastCommandType === 'START_RECORDING' && health.lastAckStatus === 'fail') {
+                this.missedStartAcks++;
+            }
+            if (health.lastCommandType === 'STOP_RECORDING' && health.lastAckStatus === 'fail') {
+                this.missedStopAcks++;
+            }
+            totalAcks += health.ackSuccessCount + health.ackFailCount;
+            successAcks += health.ackSuccessCount;
+            if (health.lastAckLatency > 0) {
+                latencies.push(health.lastAckLatency);
+            }
+        });
+
+        if (latencies.length > 0) {
+            latencies.sort((a, b) => a - b);
+            medianLatency = latencies[Math.floor(latencies.length / 2)];
+        }
+
+        const ackSuccessRate = totalAcks > 0 ? Math.round((successAcks / totalAcks) * 100) : 0;
+
+        // Update summary
+        const openCount = this.getOpenConnectionCount();
+        this.healthSummary.innerHTML = `
+            <strong>Connected:</strong> ${openCount} | 
+            <strong>Healthy:</strong> ${this.connectedHealthy} | 
+            <strong>Ack Success Rate:</strong> ${ackSuccessRate}% | 
+            <strong>Median Latency:</strong> ${medianLatency}ms | 
+            <strong>Missed Starts:</strong> ${this.missedStartAcks} | 
+            <strong>Missed Stops:</strong> ${this.missedStopAcks}
+        `;
+
+        // Update device rows
+        this.deviceHealthBody.innerHTML = '';
+        this.deviceHealth.forEach((health) => {
+            const row = document.createElement('tr');
+            const stateBadge = health.state === 'healthy' ? '✓' : health.state === 'unhealthy' ? '✗' : '○';
+            const ackRate = (health.ackSuccessCount + health.ackFailCount) > 0 
+                ? `${Math.round((health.ackSuccessCount / (health.ackSuccessCount + health.ackFailCount)) * 100)}%`
+                : 'N/A';
+            
+            const lastErr = health.lastError ? health.lastError.substring(0, 25) : 'none';
+            
+            row.innerHTML = `
+                <td>${health.peerId.substring(0, 12)}...</td>
+                <td>${stateBadge} ${health.state}</td>
+                <td>${health.lastPing}ms</td>
+                <td>${health.lastCommandType || '-'}</td>
+                <td>${health.lastAckStatus || '-'}</td>
+                <td>${health.lastAckLatency}ms</td>
+                <td>${ackRate}</td>
+                <td>${lastErr}</td>
+            `;
+            this.deviceHealthBody.appendChild(row);
+        });
+    }
+
     stopConnectionHeartbeat() {
         if (this.connectionHeartbeatInterval) {
             clearInterval(this.connectionHeartbeatInterval);
@@ -248,8 +411,11 @@ class CameraSyncApp {
                 }
 
                 try {
-                    conn.send({ type: 'PING', timestamp: now });
+                    conn.send({ type: 'PING', timestamp: now, _device_health_ping: true });
                 } catch (error) {
+                    const health = this.getDeviceHealthState(connectionKey);
+                    health.state = 'unhealthy';
+                    health.lastError = 'Heartbeat send failed';
                     conn.close();
                     this.removeConnection(connectionKey);
                 }
@@ -267,6 +433,20 @@ class CameraSyncApp {
         
         try {
             this.peer = new Peer({
+                host: this.peerServerHost,
+                port: this.peerServerPort,
+                path: '/',
+                secure: false,
+                config: {
+                    iceServers: [
+                        { urls: `stun:${this.peerServerHost}:${this.turnServerPort}` },
+                        {
+                            urls: `turn:${this.peerServerHost}:${this.turnServerPort}`,
+                            username: this.turnUsername,
+                            credential: this.turnCredential
+                        }
+                    ]
+                },
                 debug: 1
             });
 
@@ -325,11 +505,21 @@ class CameraSyncApp {
         const connectionKey = this.getConnectionKey(conn);
         this.connections.set(connectionKey, conn);
         this.connectionLastSeen.set(connectionKey, Date.now());
+        
+        // Initialize device health state
+        const health = this.getDeviceHealthState(connectionKey);
+        health.peerId = conn.peer;
+        health.state = 'joining';
 
         conn.on('open', () => {
             const connectedAt = Date.now();
             this.connectionTimes.set(connectionKey, connectedAt);
             this.connectionLastSeen.set(connectionKey, connectedAt);
+            
+            // Update device health
+            const health = this.getDeviceHealthState(connectionKey);
+            health.state = 'connected';
+            
             this.updateConnectedCount(this.getOpenConnectionCount());
             this.updateDebugMessage(`Device connected: ${conn.peer.substring(0, 8)}... (${this.getOpenConnectionCount()}/${this.maxConnectedDevices})`);
             this.updateDevicesTable();
@@ -337,12 +527,22 @@ class CameraSyncApp {
 
         conn.on('data', (data) => {
             this.connectionLastSeen.set(connectionKey, Date.now());
+            const health = this.getDeviceHealthState(connectionKey);
+            health.lastSeen = Date.now();
 
             if (!data || !data.type) {
                 return;
             }
 
-            if (data.type === 'PONG' || data.type === 'HELLO') {
+            if (data.type === 'PONG') {
+                if (data.timestamp) {
+                    const latency = Date.now() - data.timestamp;
+                    this.recordPing(connectionKey, latency);
+                }
+                return;
+            }
+            
+            if (data.type === 'HELLO') {
                 return;
             }
 
@@ -361,16 +561,50 @@ class CameraSyncApp {
                 return;
             }
 
-            if (data.type === 'START_RECORDING_ACK' || data.type === 'STOP_RECORDING_ACK') {
+            if (data.type === 'START_RECORDING_ACK') {
+                const commandId = data.commandId;
+                if (this.commandTracker.has(commandId)) {
+                    const cmd = this.commandTracker.get(commandId);
+                    cmd.ackAt = Date.now();
+                    cmd.status = data.status || 'ok';
+                    cmd.reason = data.reason || '';
+                    const latency = cmd.ackAt - cmd.sentAt;
+                    this.recordAck(connectionKey, commandId, cmd.status, cmd.reason, latency);
+                    
+                    if (cmd.status !== 'ok') {
+                        this.missedStartAcks++;
+                    }
+                }
+                return;
+            }
+            
+            if (data.type === 'STOP_RECORDING_ACK') {
+                const commandId = data.commandId;
+                if (this.commandTracker.has(commandId)) {
+                    const cmd = this.commandTracker.get(commandId);
+                    cmd.ackAt = Date.now();
+                    cmd.status = data.status || 'ok';
+                    cmd.reason = data.reason || '';
+                    const latency = cmd.ackAt - cmd.sentAt;
+                    this.recordAck(connectionKey, commandId, cmd.status, cmd.reason, latency);
+                    
+                    if (cmd.status !== 'ok') {
+                        this.missedStopAcks++;
+                    }
+                }
                 return;
             }
         });
 
-        conn.on('error', () => {
+        conn.on('error', (err) => {
+            const health = this.getDeviceHealthState(connectionKey);
+            health.lastError = err ? err.message : 'Connection error';
+            health.state = 'unhealthy';
             this.removeConnection(connectionKey);
         });
 
         conn.on('close', () => {
+            this.deviceHealth.delete(connectionKey);
             this.removeConnection(connectionKey);
         });
     }
@@ -740,6 +974,7 @@ class CameraSyncApp {
         }, 1000);
 
         this.startConnectionHeartbeat();
+        this.startHealthDashboard();
         
         if (this.myPeerId && this.isPeerReady) {
             this.generateQRCode();
@@ -860,15 +1095,53 @@ class CameraSyncApp {
 
         if (this.isController && !fromRemote) {
             const syncedTriggerAt = triggerAt || (Date.now() + this.recordingSyncLeadTimeMs);
-            const receiverCount = this.broadcastRecordingMessage('START_RECORDING', {
-                triggerAt: syncedTriggerAt
+            const commandId = this.generateCommandId();
+            
+            const openConnections = this.getOpenConnections();
+            openConnections.forEach(({ conn, connectionKey }) => {
+                try {
+                    conn.send({
+                        type: 'START_RECORDING',
+                        commandId,
+                        timestamp: Date.now(),
+                        triggerAt: syncedTriggerAt
+                    });
+                    this.recordCommandSent(connectionKey, commandId, 'START_RECORDING');
+                    this.commandTracker.set(commandId, {
+                        connectionKey,
+                        type: 'START_RECORDING',
+                        sentAt: Date.now(),
+                        ackAt: null,
+                        status: null,
+                        reason: null
+                    });
+                } catch (error) {
+                    conn.close();
+                    this.removeConnection(connectionKey);
+                }
             });
+            
+            // Setup timeout to mark missed acks
+            setTimeout(() => {
+                if (this.commandTracker.has(commandId)) {
+                    const cmd = this.commandTracker.get(commandId);
+                    if (!cmd.status) {
+                        cmd.status = 'timeout';
+                        cmd.reason = 'No ACK within ' + this.ackTimeoutMs + 'ms';
+                        const health = this.getDeviceHealthState(cmd.connectionKey);
+                        health.lastAckStatus = 'timeout';
+                        health.lastError = cmd.reason;
+                        health.state = 'unhealthy';
+                        this.missedStartAcks++;
+                    }
+                }
+            }, this.ackTimeoutMs);
 
             this.scheduleRecordingAction(() => {
                 this.startVideoRecording({ fromRemote: true, sourceLabel: 'Controller Video' });
             }, syncedTriggerAt, 'pendingRecordingStartTimeoutId');
 
-            this.updateDebugMessage(`Starting synced recording on ${receiverCount + 1} devices...`);
+            this.updateDebugMessage(`Starting synced recording on ${openConnections.length + 1} devices...`);
             return;
         }
 
@@ -940,16 +1213,54 @@ class CameraSyncApp {
 
         if (this.isController && !fromRemote) {
             const syncedTriggerAt = triggerAt || (Date.now() + this.recordingSyncLeadTimeMs);
-            const receiverCount = this.broadcastRecordingMessage('STOP_RECORDING', {
-                triggerAt: syncedTriggerAt,
-                saveClip
+            const commandId = this.generateCommandId();
+            
+            const openConnections = this.getOpenConnections();
+            openConnections.forEach(({ conn, connectionKey }) => {
+                try {
+                    conn.send({
+                        type: 'STOP_RECORDING',
+                        commandId,
+                        timestamp: Date.now(),
+                        triggerAt: syncedTriggerAt,
+                        saveClip
+                    });
+                    this.recordCommandSent(connectionKey, commandId, 'STOP_RECORDING');
+                    this.commandTracker.set(commandId, {
+                        connectionKey,
+                        type: 'STOP_RECORDING',
+                        sentAt: Date.now(),
+                        ackAt: null,
+                        status: null,
+                        reason: null
+                    });
+                } catch (error) {
+                    conn.close();
+                    this.removeConnection(connectionKey);
+                }
             });
+            
+            // Setup timeout to mark missed acks
+            setTimeout(() => {
+                if (this.commandTracker.has(commandId)) {
+                    const cmd = this.commandTracker.get(commandId);
+                    if (!cmd.status) {
+                        cmd.status = 'timeout';
+                        cmd.reason = 'No ACK within ' + this.ackTimeoutMs + 'ms';
+                        const health = this.getDeviceHealthState(cmd.connectionKey);
+                        health.lastAckStatus = 'timeout';
+                        health.lastError = cmd.reason;
+                        health.state = 'unhealthy';
+                        this.missedStopAcks++;
+                    }
+                }
+            }, this.ackTimeoutMs);
 
             this.scheduleRecordingAction(() => {
                 this.stopVideoRecording(saveClip, { fromRemote: true });
             }, syncedTriggerAt, 'pendingRecordingStopTimeoutId');
 
-            this.updateDebugMessage(`Stopping synced recording on ${receiverCount + 1} devices...`);
+            this.updateDebugMessage(`Stopping synced recording on ${openConnections.length + 1} devices...`);
             return;
         }
 
@@ -1148,10 +1459,33 @@ class CameraSyncApp {
 
                 if (data.type === 'START_RECORDING') {
                     const triggerAt = Number(data.triggerAt);
+                    const commandId = data.commandId;
+                    
                     this.scheduleRecordingAction(() => {
                         this.startVideoRecording({
                             fromRemote: true,
                             sourceLabel: 'Synced Video'
+                        }).then(() => {
+                            // Send ACK on success
+                            if (this.activeControllerConnection && this.activeControllerConnection.open) {
+                                this.activeControllerConnection.send({
+                                    type: 'START_RECORDING_ACK',
+                                    commandId,
+                                    status: 'ok',
+                                    timestamp: Date.now()
+                                });
+                            }
+                        }).catch((err) => {
+                            // Send ACK with failure reason
+                            if (this.activeControllerConnection && this.activeControllerConnection.open) {
+                                this.activeControllerConnection.send({
+                                    type: 'START_RECORDING_ACK',
+                                    commandId,
+                                    status: 'fail',
+                                    reason: err ? err.message : 'Recording start failed',
+                                    timestamp: Date.now()
+                                });
+                            }
                         });
                     }, triggerAt, 'pendingRecordingStartTimeoutId');
                     this.updateDebugMessage('Synced recording start received.');
@@ -1161,8 +1495,19 @@ class CameraSyncApp {
                 if (data.type === 'STOP_RECORDING') {
                     const triggerAt = Number(data.triggerAt);
                     const saveClip = data.saveClip !== false;
+                    const commandId = data.commandId;
+                    
                     this.scheduleRecordingAction(() => {
                         this.stopVideoRecording(saveClip, { fromRemote: true });
+                        // Send ACK on success
+                        if (this.activeControllerConnection && this.activeControllerConnection.open) {
+                            this.activeControllerConnection.send({
+                                type: 'STOP_RECORDING_ACK',
+                                commandId,
+                                status: 'ok',
+                                timestamp: Date.now()
+                            });
+                        }
                     }, triggerAt, 'pendingRecordingStopTimeoutId');
                     this.updateDebugMessage('Synced recording stop received.');
                     return;
@@ -1221,6 +1566,10 @@ class CameraSyncApp {
         }, triggerAt, 'pendingPhotoTimeoutId');
 
         this.updateDebugMessage(`Photo trigger scheduled for ${openConnections.length + 1} devices!`);
+    }
+    
+    generateCommandId() {
+        return ++this.nextCommandId;
     }
 
     async capturePhoto() {
@@ -1493,6 +1842,10 @@ fallbackDownload() {
             clearInterval(this.devicesTableRefreshInterval);
             this.devicesTableRefreshInterval = null;
         }
+        
+        this.stopHealthDashboard();
+        this.deviceHealth.clear();
+        this.commandTracker.clear();
 
         this.stopConnectionHeartbeat();
         

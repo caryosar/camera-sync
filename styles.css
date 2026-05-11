@@ -437,6 +437,70 @@ video {
     font-style: italic;
 }
 
+/* Health Dashboard Styles */
+.health-dashboard {
+    margin: 20px 0;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    border: 2px solid #007AFF;
+}
+
+.health-dashboard h3 {
+    margin: 0 0 12px 0;
+    color: #333;
+    font-size: 16px;
+}
+
+.health-summary {
+    background: white;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-size: 13px;
+    line-height: 1.6;
+    font-family: monospace;
+    color: #333;
+    border: 1px solid #e0e0e0;
+}
+
+.device-health-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 12px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.device-health-table thead {
+    background: #007AFF;
+    color: white;
+}
+
+.device-health-table th {
+    padding: 10px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.device-health-table td {
+    padding: 10px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #333;
+}
+
+.device-health-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.device-health-table tbody tr:hover {
+    background-color: #f5f5f5;
+}
+
 @media (max-width: 480px) {
     .devices-table th,
     .devices-table td {
@@ -446,6 +510,21 @@ video {
     
     .devices-table .device-id {
         font-size: 11px;
+    }
+    
+    .device-health-table {
+        font-size: 10px;
+    }
+    
+    .device-health-table th,
+    .device-health-table td {
+        padding: 8px 5px;
+        font-size: 10px;
+    }
+    
+    .health-summary {
+        font-size: 11px;
+        line-height: 1.4;
     }
 }
 #controller-id-input {

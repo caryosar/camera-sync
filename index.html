@@ -10,6 +10,12 @@
 <body>
     <div class="app">
         <h1>Camera Sync App</h1>
+        <!-- QR Code for external site -->
+        <div id="external-qr-section" style="text-align:center; margin-bottom: 1.5em;">
+            <p>Scan to visit the official CameraSync site:</p>
+            <div id="external-qr-img"></div>
+            <p style="font-size:0.9em; color:#555;">https://colt.ifas.ufl.edu/camerasync/</p>
+        </div>
         
         <div class="status">
             <p>Connected: <span id="connected-count">0</span></p>
@@ -30,6 +36,28 @@
             <video id="controller-preview" autoplay muted playsinline></video>
             <button id="trigger-cameras-btn" class="btn red" disabled>Trigger All Cameras</button>
             <button id="stop-hosting-btn" class="btn gray">Stop Hosting / Back</button>
+            
+            <!-- Health Dashboard -->
+            <div id="health-dashboard" class="health-dashboard">
+                <h3>Device Health Status</h3>
+                <div id="health-summary" class="health-summary"></div>
+                <table class="device-health-table">
+                    <thead>
+                        <tr>
+                            <th>Device ID</th>
+                            <th>State</th>
+                            <th>Ping</th>
+                            <th>Last Cmd</th>
+                            <th>ACK Status</th>
+                            <th>Latency</th>
+                            <th>Rate</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody id="device-health-body">
+                    </tbody>
+                </table>
+            </div>
             
             <!-- Connected Devices Table -->
             <div class="connected-devices-section">
@@ -99,5 +127,20 @@
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
     <script src="script.js"></script>
+    <script>
+    // Wait for QR code library to be available before rendering QR as image
+    function renderExternalQR() {
+        var qrDiv = document.getElementById('external-qr-img');
+        if (qrDiv && typeof qrcode === 'function') {
+            var qr = qrcode(0, 'M');
+            qr.addData('https://colt.ifas.ufl.edu/camerasync/');
+            qr.make();
+            qrDiv.innerHTML = qr.createImgTag(4, 8);
+        } else {
+            setTimeout(renderExternalQR, 100); // Try again until qrcode is loaded
+        }
+    }
+    window.addEventListener('DOMContentLoaded', renderExternalQR);
+    </script>
 </body>
 </html>
