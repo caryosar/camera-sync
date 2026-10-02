@@ -1,0 +1,5 @@
+const test=require('node:test');const assert=require('node:assert/strict');
+class Model{constructor(){this.connections=new Map;this.calls=[]}accept(c){const k=c.id;if(this.connections.has(k))return;this.connections.set(k,c)}command(d,now=1000){if(!d||!['PHOTO_AT','START_AT','STOP_AT'].includes(d.type))return false;const at=Number(d.at);if(!Number.isFinite(at)||Math.abs(at-now)>30000)return false;this.calls.push(d.type);return true}}
+test('duplicate peer connection is ignored',()=>{const m=new Model,c={id:'a'};m.accept(c);m.accept(c);assert.equal(m.connections.size,1)});
+test('valid commands accepted',()=>{const m=new Model;for(const type of ['PHOTO_AT','START_AT','STOP_AT'])assert.equal(m.command({type,at:1000}),true);assert.deepEqual(m.calls,['PHOTO_AT','START_AT','STOP_AT'])});
+test('malformed, unknown and stale commands rejected',()=>{const m=new Model;for(const d of [null,{}, {type:'ERASE',at:1000},{type:'PHOTO_AT',at:'x'},{type:'PHOTO_AT',at:40001}])assert.equal(m.command(d),false);assert.equal(m.calls.length,0)});

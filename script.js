@@ -34,9 +34,13 @@ class CameraSyncApp {
         this.photoSyncLeadTimeMs = 800;
         this.pendingRecordingStartTimeoutId = null;
         this.pendingRecordingStopTimeoutId = null;
-        this.peerServerHost = '10.77.77.1';
-        this.peerServerPort = 9000;
-        this.turnServerPort = 3478;
+        const networkConfig = this.resolveNetworkConfig();
+        this.peerServerHost = networkConfig.peerServerHost;
+        this.peerServerPort = networkConfig.peerServerPort;
+        this.peerServerPath = networkConfig.peerServerPath;
+        this.peerServerSecure = networkConfig.peerServerSecure;
+        this.turnServerHost = networkConfig.turnServerHost;
+        this.turnServerPort = networkConfig.turnServerPort;
         this.turnUsername = 'camera';
         this.turnCredential = 'sync';
         
@@ -54,11 +58,75 @@ class CameraSyncApp {
         this.attachEventListeners();
         this.updateCameraStatus('Camera will be requested when you start Controller or Receiver mode');
         this.updateEnvironmentWarnings();
-        this.requestCameraPermission();
         
         setTimeout(() => {
             this.initializePeerJS();
         }, 1000);
+    }
+
+    resolveNetworkConfig() {
+        const defaults = {
+            peerServerHost: '10.77.77.1',
+            peerServerPort: 9000,
+            peerServerPath: '/peerjs',
+            peerServerSecure: false,
+            turnServerHost: '10.77.77.1',
+            turnServerPort: 3478
+        };
+
+        try {
+            const params = new URLSearchParams(window.location.search);
+            const storedPeerHost = window.localStorage.getItem('cameraSyncPeerHost') || '';
+            const storedTurnHost = window.localStorage.getItem('cameraSyncTurnHost') || '';
+            const storedPeerPort = window.localStorage.getItem('cameraSyncPeerPort') || '';
+            const storedPeerPath = window.localStorage.getItem('cameraSyncPeerPath') || '';
+            const storedPeerSecure = window.localStorage.getItem('cameraSyncPeerSecure') || '';
+            const storedTurnPort = window.localStorage.getItem('cameraSyncTurnPort') || '';
+
+            const pageHost = window.location && window.location.hostname ? window.location.hostname : '';
+            const pageIsSecure = window.location && window.location.protocol === 'https:';
+            const pagePort = window.location && window.location.port ? Number(window.location.port) : 0;
+            const fallbackHost = pageHost && pageHost !== 'localhost' && pageHost !== '127.0.0.1'
+                ? pageHost
+                : defaults.peerServerHost;
+
+            const peerServerHost = params.get('peerHost') || params.get('gatewayHost') || storedPeerHost || fallbackHost;
+            const securePagePeerPort = pagePort || 443;
+            const peerServerSecure = (params.get('peerSecure') || storedPeerSecure || '').toLowerCase() === 'true'
+                ? true
+                : (params.get('peerSecure') || storedPeerSecure || '').toLowerCase() === 'false'
+                    ? false
+                    : pageIsSecure;
+            const peerServerPort = Number(
+                params.get('peerPort')
+                || storedPeerPort
+                || (peerServerSecure ? securePagePeerPort : defaults.peerServerPort)
+            ) || (peerServerSecure ? securePagePeerPort : defaults.peerServerPort);
+            
+            // When on HTTPS with same host, use reverse proxy path '/' (proxy is at /peerjs/ and forwards to /peerjs/)
+            // Otherwise use direct PeerJS path '/peerjs'
+            let peerServerPath = params.get('peerPath') || storedPeerPath;
+            if (!peerServerPath) {
+                if (pageIsSecure && peerServerHost === pageHost) {
+                    peerServerPath = '/';
+                } else {
+                    peerServerPath = defaults.peerServerPath;
+                }
+            }
+            
+            const turnServerHost = params.get('turnHost') || storedTurnHost || peerServerHost;
+
+            return {
+                peerServerHost,
+                peerServerPort,
+                peerServerPath,
+                peerServerSecure,
+                turnServerHost,
+                turnServerPort: Number(params.get('turnPort') || storedTurnPort || defaults.turnServerPort) || defaults.turnServerPort
+            };
+        } catch (error) {
+            return defaults;
+        }
     }
 
     initializeElements() {
@@ -175,6 +243,12 @@ class CameraSyncApp {
             return;
         }
 
+        if (this.isVSCodeEmbeddedBrowser()) {
+            this.cameraPolicyWarning.textContent = 'VS Code embedded browser may not surface camera permission prompts reliably. Use the external browser for camera capture.';
+            this.cameraPolicyWarning.classList.remove('hidden');
+            return;
+        }
+
         if (!window.isSecureContext) {
             this.cameraPolicyWarning.textContent = 'Camera access requires https:// or http://localhost.';
             this.cameraPolicyWarning.classList.remove('hidden');
@@ -206,6 +280,11 @@ class CameraSyncApp {
         }
 
         this.updateEnvironmentWarnings();
+    }
+
+    isVSCodeEmbeddedBrowser() {
+        const userAgent = (navigator.userAgent || '').toLowerCase();
+        return userAgent.includes('vscode') || userAgent.includes('electron');
     }
 
     resolveMaxDevices() {
@@ -362,6 +441,12 @@ class CameraSyncApp {
 
         // Update device rows
         this.deviceHealthBody.innerHTML = '';
+
+        if (this.deviceHealth.size === 0) {
+            this.deviceHealthBody.innerHTML = '<tr class="empty-state"><td colspan="8">No devices connected yet</td></tr>';
+            return;
+        }
+
         this.deviceHealth.forEach((health) => {
             const row = document.createElement('tr');
             const stateBadge = health.state === 'healthy' ? '✓' : health.state === 'unhealthy' ? '✗' : '○';
@@ -429,14 +514,15 @@ class CameraSyncApp {
     }
 
     initializePeerJS() {
-        this.updateDebugMessage('Initializing connection...');
+        const peerProtocol = this.peerServerSecure ? 'https' : 'http';
+        this.updateDebugMessage(`Initializing gateway laptop connection at ${peerProtocol}://${this.peerServerHost}:${this.peerServerPort}${this.peerServerPath}...`);
         
         try {
             this.peer = new Peer({
                 host: this.peerServerHost,
                 port: this.peerServerPort,
-                path: '/',
-                secure: false,
+                path: this.peerServerPath,
+                secure: this.peerServerSecure,
                 config: {
                     iceServers: [
                         { urls: `stun:${this.peerServerHost}:${this.turnServerPort}` },
@@ -453,7 +539,7 @@ class CameraSyncApp {
             this.peer.on('open', (id) => {
                 this.myPeerId = id;
                 this.isPeerReady = true;
-                this.updateDebugMessage(`Connected! ID: ${id.substring(0, 8)}...`);
+                this.updateDebugMessage(`Connected through gateway laptop. ID: ${id.substring(0, 8)}...`);
                 
                 if (this.isController) {
                     this.generateQRCode();
@@ -489,7 +575,7 @@ class CameraSyncApp {
 
     fallbackToManualConnection() {
         this.myPeerId = null;
-        this.updateDebugMessage('Peer signaling unavailable. Check internet/firewall and reload.');
+        this.updateDebugMessage('Peer signaling unavailable. Check the gateway laptop server and reload.');
     }
 
     handleIncomingConnection(conn) {
@@ -610,6 +696,14 @@ class CameraSyncApp {
     }
 
     async requestCameraPermission() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            const guidance = 'Browser does not support camera capture on this page.';
+            this.showCameraPolicyWarning(guidance);
+            this.updateCameraStatus(guidance);
+            this.updateDebugMessage(guidance);
+            return false;
+        }
+
         try {
             this.stream = await navigator.mediaDevices.getUserMedia({ 
                 video: { 
@@ -623,11 +717,19 @@ class CameraSyncApp {
             this.updateCameraStatus('Camera ready');
             return true;
         } catch (error) {
-            const guidance = this.getCameraPermissionGuidance(error);
-            this.showCameraPolicyWarning(guidance);
-            this.updateCameraStatus(guidance);
-            this.updateDebugMessage(guidance);
-            return false;
+            try {
+                // Desktop browsers may reject rear-camera preference even when a camera is available.
+                this.stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                this.clearCameraPolicyWarning();
+                this.updateCameraStatus('Camera ready');
+                return true;
+            } catch (fallbackError) {
+                const guidance = this.getCameraPermissionGuidance(fallbackError);
+                this.showCameraPolicyWarning(guidance);
+                this.updateCameraStatus(guidance);
+                this.updateDebugMessage(guidance);
+                return false;
+            }
         }
     }
 
@@ -635,6 +737,10 @@ class CameraSyncApp {
         const message = (error && error.message ? error.message : '').toLowerCase();
         const name = error && error.name ? error.name : 'UnknownError';
         const policyBlocked = message.includes('permissions policy') || message.includes('not allowed in this document');
+
+        if (this.isVSCodeEmbeddedBrowser()) {
+            return 'Camera permission is unreliable in the VS Code embedded browser. Open this page in your external browser to grant camera access.';
+        }
 
         if (policyBlocked) {
             if (window.top !== window.self) {
@@ -975,6 +1081,7 @@ class CameraSyncApp {
 
         this.startConnectionHeartbeat();
         this.startHealthDashboard();
+        this.updateHealthDashboard();
         
         if (this.myPeerId && this.isPeerReady) {
             this.generateQRCode();

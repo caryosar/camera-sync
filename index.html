@@ -10,12 +10,6 @@
 <body>
     <div class="app">
         <h1>Camera Sync App</h1>
-        <!-- QR Code for external site -->
-        <div id="external-qr-section" style="text-align:center; margin-bottom: 1.5em;">
-            <p>Scan to visit the official CameraSync site:</p>
-            <div id="external-qr-img"></div>
-            <p style="font-size:0.9em; color:#555;">https://colt.ifas.ufl.edu/camerasync/</p>
-        </div>
         
         <div class="status">
             <p>Connected: <span id="connected-count">0</span></p>
@@ -121,26 +115,11 @@
         <canvas id="capture-canvas" class="hidden"></canvas>
     </div>
 
-    <!-- Load libraries in correct order -->
-    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
-    <script src="script.js"></script>
-    <script>
-    // Wait for QR code library to be available before rendering QR as image
-    function renderExternalQR() {
-        var qrDiv = document.getElementById('external-qr-img');
-        if (qrDiv && typeof qrcode === 'function') {
-            var qr = qrcode(0, 'M');
-            qr.addData('https://colt.ifas.ufl.edu/camerasync/');
-            qr.make();
-            qrDiv.innerHTML = qr.createImgTag(4, 8);
-        } else {
-            setTimeout(renderExternalQR, 100); // Try again until qrcode is loaded
-        }
-    }
-    window.addEventListener('DOMContentLoaded', renderExternalQR);
-    </script>
+    <!-- Load local libraries for offline LAN use -->
+    <script src="vendor/peerjs.min.js" defer></script>
+    <script src="vendor/jszip.min.js" defer></script>
+    <script src="vendor/jsQR.js" defer></script>
+    <script src="vendor/qrcode.js" defer></script>
+    <script src="script.js" defer></script>
 </body>
 </html>

@@ -1,0 +1,55 @@
+{
+  "name": "camera-sync",
+  "productName": "Camera Sync",
+  "version": "1.1.0",
+  "description": "Local camera synchronization controller and receiver",
+  "main": "src/main.js",
+  "author": "Rob Bailey",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "make:win": "electron-forge make --platform=win32 --arch=x64",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check src/main.js && node --check src/server.js && node --check src/public/app.js && npm test",
+    "audit:prod": "npm audit --omit=dev --audit-level=high"
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "^1.0.1",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "jszip": "^3.10.1",
+    "peer": "^1.0.2",
+    "peerjs": "^1.5.5",
+    "qrcode": "^1.5.4",
+    "selfsigned": "^2.4.1"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-squirrel": "^7.11.2",
+    "electron": "^44.4.5",
+    "eslint": "^9.36.0"
+  },
+  "config": {
+    "forge": {
+      "packagerConfig": {
+        "asar": true,
+        "name": "CameraSync",
+        "executableName": "CameraSync"
+      },
+      "makers": [
+        {
+          "name": "@electron-forge/maker-squirrel",
+          "config": {
+            "name": "camera_sync",
+            "setupExe": "CameraSyncSetup.exe",
+            "shortcutName": "Camera Sync"
+          }
+        }
+      ]
+    }
+  }
+}
