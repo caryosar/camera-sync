@@ -1,6 +1,7 @@
-class App{constructor(){this.peer=null;this.connections=new Map();this.stream=null;this.media=[];this.recorder=null;this.chunks=[];this.$=id=>document.getElementById(id);this.bind();this.initPeer();this.$('endpoint').textContent='Receiver URL: '+location.origin;}
+class App{constructor(){this.peer=null;this.connections=new Map();this.stream=null;this.media=[];this.recorder=null;this.chunks=[];this.$=id=>document.getElementById(id);this.bind();this.initPeer(); // placeholder until we fetch LAN URLs
+this.$('endpoint').textContent='Receiver URL: loading…';}
 bind(){this.$('controller').onclick=()=>this.mode('controller');this.$('receiver').onclick=()=>this.mode('receiver');this.$('join').onclick=()=>this.connect();this.$('capture').onclick=()=>this.broadcast({type:'PHOTO_AT',at:Date.now()+800});this.$('record').onclick=()=>this.broadcast({type:'START_AT',at:Date.now()+800});this.$('stop').onclick=()=>this.broadcast({type:'STOP_AT',at:Date.now()+800});this.$('download').onclick=()=>this.download();this.$('clear').onclick=()=>{this.media=[];this.$('gallery').innerHTML='';this.buttons()};this.$('back1').onclick=this.$('back2').onclick=()=>location.reload();}
-initPeer(){this.peer=new Peer({host:location.hostname,port:Number(location.port),path:'/peerjs',secure:true,debug:1});this.peer.on('open',id=>{this.$('status').textContent='Signaling ready';this.$('peerId').value=id});this.peer.on('connection',c=>this.accept(c));this.peer.on('error',e=>this.$('status').textContent='Peer error: '+e.type)}
+initPeer(){this.peer=new Peer({host:location.hostname,port:Number(location.port),path:'/peerjs',secure:location.protocol === 'https:',debug:1});this.peer.on('open',id=>{this.$('status').textContent='Signaling ready';this.$('peerId').value=id});this.peer.on('connection',c=>this.accept(c));this.peer.on('error',e=>this.$('status').textContent='Peer error: '+e.type)}
 async camera(){
         // If the browser does not support getUserMedia, disable media‑capture UI early.
         if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
@@ -18,14 +19,35 @@ async camera(){
         return this.stream;
     }
 async mode(which){
-        try{await this.camera()}catch(e){alert('Camera unavailable: '+e.message);return}
-        this.$('home').hidden=true;this.$(which+'Panel').hidden=false;
-        if(which==='controller'){
-            const id=this.$('peerId').value;
-            if(id) this.$('qr').src='/qr?data='+encodeURIComponent(id);
-            const hasStream = !!this.stream;
-            this.$('capture').disabled = !hasStream;
-            this.$('record').disabled = !hasStream;
+        // Only request camera access when acting as a receiver.
+        if (which === 'receiver') {
+            try { await this.camera(); }
+            catch (e) { alert('Camera unavailable: ' + e.message); return; }
+        }
+        this.$('home').hidden = true;
+        this.$(which + 'Panel').hidden = false;
+        if (which === 'controller') {
+            const id = this.$('peerId').value;
+            if (id) {
+                // Use the same LAN discovery logic as the receiver to build a URL that works from other devices.
+                const fetchLan = async () => {
+                    try {
+                        const r = await fetch('/lan');
+                        const data = await r.json();
+                        const candidates = (data.lanUrls && data.lanUrls.length) ? data.lanUrls : [data.lanUrl];
+                        const base = candidates.find(u => !u.includes('127.0.0.1')) || candidates[0] || location.origin;
+                        return base;
+                    } catch {
+                        return location.origin;
+                    }
+                };
+                const baseUrl = await fetchLan();
+                const controllerUrl = `${baseUrl}?controllerId=${encodeURIComponent(id)}`;
+                this.$('qr').src = '/qr?data=' + encodeURIComponent(controllerUrl);
+            }
+            // Controller does not need a camera stream; disable related buttons.
+            this.$('capture').disabled = true;
+            this.$('record').disabled = true;
         }
     }
 accept(c){const key=c.connectionId||c.peer;if(this.connections.has(key))return;this.connections.set(key,c);c.on('open',()=>this.count());c.on('data',d=>{if(d&&typeof d==='object')this.command(d)});c.on('error',()=>{this.connections.delete(key);this.count()});c.on('close',()=>{this.connections.delete(key);this.count()})}
@@ -39,4 +61,21 @@ stopRecording(){if(this.recorder?.state==='recording')this.recorder.stop();this.
 add(blob,ext){const name=`camera_sync_${Date.now()}.${ext}`;if(!blob||!blob.size)return;this.media.push({blob,name});const url=URL.createObjectURL(blob),el=document.createElement(ext==='jpg'?'img':'video');el.src=url;if(ext!=='jpg')el.controls=true;this.$('gallery').appendChild(el);this.buttons()}
 buttons(){const empty=!this.media.length;this.$('download').disabled=empty;this.$('clear').disabled=empty}
 async download(){const zip=new JSZip();for(const m of this.media)zip.file(m.name,m.blob);const b=await zip.generateAsync({type:'blob'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='camera_sync_media.zip';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}}
-addEventListener('DOMContentLoaded',()=>new App());
+addEventListener('DOMContentLoaded',()=>{ const app = new App(); const urlParams = new URLSearchParams(location.search); if (urlParams.has('controllerId')) { const ctrlId = urlParams.get('controllerId'); app.$('controllerId').value = ctrlId; app.mode('receiver'); app.connect(); } else { const qrImg = document.getElementById('receiverQr'); // Fetch LAN URLs and update endpoint and QR code
+  fetch('/lan')
+    .then(r => r.json())
+    .then(data => {
+      const candidates = (data.lanUrls && data.lanUrls.length) ? data.lanUrls : [data.lanUrl];
+      const url = candidates.find(u => !u.includes('127.0.0.1')) || candidates[0] || location.origin;
+      // Update displayed endpoint
+      const endpointEl = document.getElementById('endpoint');
+      if (endpointEl) endpointEl.textContent = `Receiver URL: ${url}`;
+      // Update QR code image
+      if (qrImg) qrImg.src = `/qr?data=${encodeURIComponent(url)}`;
+    })
+    .catch(() => {
+      const fallback = location.origin;
+      const endpointEl = document.getElementById('endpoint');
+      if (endpointEl) endpointEl.textContent = `Receiver URL: ${fallback}`;
+      if (qrImg) qrImg.src = `/qr?data=${encodeURIComponent(fallback)}`;
+    }); } });

@@ -2,6 +2,12 @@ const { app, BrowserWindow, session, shell } = require('electron');
 const path = require('path');
 const { startServer, stopServer } = require('./server');
 if (require('electron-squirrel-startup')) app.quit();
+
+// Disable GPU and disk cache to avoid permission errors on locked cache directories
+app.commandLine.appendSwitch('disable-gpu');
+app.commandLine.appendSwitch('disable-software-rasterizer');
+app.commandLine.appendSwitch('disable-http-cache');
+app.commandLine.appendSwitch('disable-application-cache');
 let mainWindow;
 const TRUSTED = new Set(['127.0.0.1','localhost']);
 async function createWindow() {
